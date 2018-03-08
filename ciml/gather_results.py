@@ -35,6 +35,8 @@ def _parse_dstat_date(date_str):
 
 def _get_dstat_file(artifact_link):
     paths = ['controller/logs/dstat-csv_log.txt.gz',
+             'controller/logs/dstat-csv_log.txt',
+             'logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt.gz']
     for path in paths:
         url = artifact_link + '/' + path
