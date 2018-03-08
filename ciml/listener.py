@@ -23,6 +23,7 @@ class MQTTSubscribe(threading.Thread):
     def __init__(self, output_queue, hostname, topic, port=1883,
                  websocket=False, client_id=None, keepalive=60,
                  will=None, auth=None, tls=None, qos=0):
+        super(MQTTSubscribe, self).__init__()
         self.queue = output_queue
         self.hostname = hostname
         self.port = port

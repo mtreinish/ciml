@@ -53,38 +53,48 @@ def _get_dstat_file(artifact_link):
 
 
 def get_subunit_results(build_uuid, db_uri):
-    result = {}
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
-    run_id = api.get_run_id_from_uuid(build_uuid, session=session)
-    run = api.get_run_by_id(run_id, session=session)
-    dstat = _get_dstat_file(run.artifacts)
-    if not dstat:
-        return {}
-    meta = api.get_run_metadata(run_id, session=session)
-    build_name = [x.value for x in meta if meta.key == 'build_name'][0]
-    # NOTE(mtreinish): Only be concerned with single node to start
-    if 'multinode' in build_name:
-        return {}
-    test_runs = api.get_test_runs_by_run_id(run_id, session=session)
-    tests = []
-    for test_run in test_runs:
-        test = {'status': test_run.status}
-        start_time = test_run.start_time
-        start_time = start_time.replace(
-            microsecond=test_run.start_time_microsecond)
-        stop_time = test_run.stop_time
-        stop_time = stop_time.replace(
-            microsecond=test_run.stop_time_microsecond)
-        test['start_time'] = start_time
-        test['stop_time'] = stop_time
-        tests.append(test)
-    if run.fails > 0 or run.passes == 0:
-        result['status'] = 'Success'
-    else:
-        result['status'] = 'Fail'
-    result['artifact'] = run.artifacts
-    result['tests'] = tests
-    result['dstat'] = dstat
-    return result
+    runs = api.get_runs_by_key_value('build_uuid', build_uuid, session=session)
+    results = []
+    for run in runs:
+        run_id = run.id
+        run_uuid = run.uuid
+        result = {}
+        run = api.get_run_by_id(run_id, session=session)
+        dstat = _get_dstat_file(run.artifacts)
+        if dstat is None:
+            continue
+        meta = api.get_run_metadata(run_uuid, session=session)
+        build_names = [x.value for x in meta if x.key == 'build_name']
+        if len(build_names) >= 1:
+            build_name = build_names[0]
+        else:
+            continue
+        # NOTE(mtreinish): Only be concerned with single node to start
+        if 'multinode' in build_name:
+            continue
+        test_runs = api.get_test_runs_by_run_id(run_id, session=session)
+        session.close()
+        tests = []
+        for test_run in test_runs:
+            test = {'status': test_run.status}
+            start_time = test_run.start_time
+            start_time = start_time.replace(
+                microsecond=test_run.start_time_microsecond)
+            stop_time = test_run.stop_time
+            stop_time = stop_time.replace(
+                microsecond=test_run.stop_time_microsecond)
+            test['start_time'] = start_time
+            test['stop_time'] = stop_time
+            tests.append(test)
+        if run.fails > 0 or run.passes == 0:
+            result['status'] = 'Success'
+        else:
+            result['status'] = 'Fail'
+        result['artifact'] = run.artifacts
+        result['tests'] = tests
+        result['dstat'] = dstat
+        results.append(result)
+    return results

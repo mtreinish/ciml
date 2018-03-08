@@ -19,21 +19,20 @@ from ciml import gather_results
 from ciml import listener
 
 
-def train(results, rnn):
-    pass
-
-
 def main():
     event_queue = queue.Queue()
     listen_thread = listener.MQTTSubscribe(event_queue,
                                            'firehose.openstack.org',
-                                           'subunit-gearman/#')
+                                           'gearman-subunit/#')
     listen_thread.start()
     dstat_model = dstat_data.DstatTrainer()
     while True:
         event = event_queue.get()
-        results = gather_results.get_subunit_results(event['build_uuid'])
-        dstat_model.train(results['dstat'], results['status'])
+        results = gather_results.get_subunit_results(
+            event['build_uuid'],
+            'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql')
+        for result in results:
+            dstat_model.train(result['dstat'], result['status'])
 
 
 if __name__ == "__main__":

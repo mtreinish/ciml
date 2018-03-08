@@ -62,7 +62,7 @@ class DstatTrainer(object):
             tf.feature_column.numeric_column(key='tim'),
             tf.feature_column.numeric_column(key='clo'),
         ]
-        self.estimator = estimator(feature_columns=self.feature_columns,
+        self.estimator = estimator(feature_columns=self.metric_columns,
                                    hidden_units=[31, 31],
                                    n_classes=2)
 
