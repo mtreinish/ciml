@@ -75,7 +75,7 @@ def get_subunit_results(build_uuid, db_uri):
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in build_name:
             continue
-        test_runs = api.get_test_runs_by_run_id(run_id, session=session)
+        test_runs = api.get_test_runs_by_run_id(run_uuid, session=session)
         session.close()
         tests = []
         for test_run in test_runs:
