@@ -14,8 +14,6 @@
 
 import queue
 
-import torch
-
 from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
@@ -31,13 +29,11 @@ def main():
                                            'firehose.openstack.org',
                                            'subunit-gearman/#')
     listen_thread.start()
-    rnn = dstat_data.DstatRNN()
+    dstat_model = dstat_data.DstatTrainer()
     while True:
         event = event_queue.get()
         results = gather_results.get_subunit_results(event['build_uuid'])
-        train(results, rnn)
-
-        torch.save(rnn, '/tmp/dstat.pt')
+        dstat_model.train(results['dstat'], results['status'])
 
 
 if __name__ == "__main__":
