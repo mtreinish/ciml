@@ -49,7 +49,7 @@ class MQTTSubscribe(threading.Thread):
             client.subscribe(self.mqtt_topic)
 
         def on_message(client, userdata, msg):
-            output = json.loads(msg.payload)
+            output = json.loads(msg.payload.decode('utf-8'))
             self.queue.put(output)
 
         self.client.on_connect = on_connect
