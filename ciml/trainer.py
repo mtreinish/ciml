@@ -18,8 +18,16 @@ from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
 
+def train_build_uuid(build_uuid):
+    results = gather_results.get_subunit_results(
+        build_uuid,
+        'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql')
+    for result in results:
+        print('Got a result %s' % result['tests'])
+        dstat_model.train(result['dstat'], result['status'])
 
-def main():
+
+def mqtt_trainer():
     event_queue = queue.Queue()
     listen_thread = listener.MQTTSubscribe(event_queue,
                                            'firehose.openstack.org',
@@ -28,11 +36,14 @@ def main():
     dstat_model = dstat_data.DstatTrainer()
     while True:
         event = event_queue.get()
-        results = gather_results.get_subunit_results(
-            event['build_uuid'],
-            'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql')
-        for result in results:
-            dstat_model.train(result['dstat'], result['status'])
+        train_build_uuid(event['build_uuid'])
+
+def db_trainer():
+    pass
+
+
+def main():
+    mqtt_trainer()
 
 
 if __name__ == "__main__":

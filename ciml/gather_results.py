@@ -98,3 +98,5 @@ def get_subunit_results(build_uuid, db_uri):
         result['dstat'] = dstat
         results.append(result)
     return results
+
+def get_build_uuids(db_uri):
