@@ -44,9 +44,9 @@ def db_trainer():
     runs = gather_results.get_runs_by_name(db_uri)
     dstat_model = dstat_data.DstatTrainer()
     for run in runs:
-        result = gather_results.get_result_for_run(run, db_uri)
+        result = gather_results.get_subunit_results_for_run(run, db_uri)
         print('Got a run: %s %s' % (result['status'], result['artifact']))
-        # train_results([result], dstat_model)
+        train_results(result, dstat_model)
 
 
 def main():

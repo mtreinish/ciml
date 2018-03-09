@@ -51,10 +51,7 @@ def _get_dstat_file(artifact_link):
     else:
         return None
 
-def get_result_for_run(run, db_uri):
-    engine = create_engine(db_uri)
-    Session = sessionmaker(bind=engine)
-    session = Session()
+def _get_result_for_run(run, session):
     run_id = run.id
     run_uuid = run.uuid
     # Check if we are interested in this build at all
@@ -102,10 +99,16 @@ def get_subunit_results(build_uuid, db_uri):
     runs = api.get_runs_by_key_value('build_uuid', build_uuid, session=session)
     results = []
     for run in runs:
-        result = get_results_for_run(run, session)
+        result = _get_result_for_run(run, session)
         if result:
-            results.append()
+            results.append(result)
     return results
+
+def get_subunit_results_for_run(run, db_uri):
+    engine = create_engine(db_uri)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    return [_get_result_for_run(run, session)]
 
 def get_runs_by_name(db_uri, build_name='tempest-full'):
     engine = create_engine(db_uri)
