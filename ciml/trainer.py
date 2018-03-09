@@ -18,13 +18,12 @@ from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
 
-def train_build_uuid(build_uuid):
-    results = gather_results.get_subunit_results(
-        build_uuid,
-        'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql')
+db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
+
+
+def train_results(results, model):
     for result in results:
-        print('Got a result %s' % result['tests'])
-        dstat_model.train(result['dstat'], result['status'])
+        model.train(result['dstat'], result['status'])
 
 
 def mqtt_trainer():
@@ -36,10 +35,18 @@ def mqtt_trainer():
     dstat_model = dstat_data.DstatTrainer()
     while True:
         event = event_queue.get()
-        train_build_uuid(event['build_uuid'])
+        results = gather_results.get_subunit_results(
+            event['build_uuid'], db_uri)
+        train_results(results, dstat_model)
+
 
 def db_trainer():
-    pass
+    runs = gather_results.get_runs_by_name(db_uri)
+    dstat_model = dstat_data.DstatTrainer()
+    for run in runs:
+        result = gather_results.get_result_for_run(run, db_uri)
+        print('Got a run: %s %s' % (result['status'], result['artifact']))
+        # train_results([result], dstat_model)
 
 
 def main():
