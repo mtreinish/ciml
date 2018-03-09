@@ -23,7 +23,9 @@ db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
 
 def train_results(results, model):
     for result in results:
-        model.train(result['dstat'], result['status'])
+        print('%s: %s' % (results[0]['artifact'], results[0]['status']))
+        # Do not train just yet
+        # model.train(result['dstat'], result['status'])
 
 
 def mqtt_trainer():
@@ -44,9 +46,8 @@ def db_trainer():
     runs = gather_results.get_runs_by_name(db_uri)
     dstat_model = dstat_data.DstatTrainer()
     for run in runs:
-        result = gather_results.get_subunit_results_for_run(run, db_uri)
-        print('Got a run: %s %s' % (result['status'], result['artifact']))
-        train_results(result, dstat_model)
+        results = gather_results.get_subunit_results_for_run(run, db_uri)
+        train_results(results, dstat_model)
 
 
 def main():
