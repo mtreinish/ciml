@@ -21,11 +21,20 @@ from ciml import listener
 db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
 
 
+def normalize_data(result):
+    # Normalize data. This is key to a good prediction.
+    # no-op for now
+    return result
+
+
 def train_results(results, model):
     for result in results:
-        print('%s: %s' % (results[0]['artifact'], results[0]['status']))
+        # Normalize data - take the whole data as we may need results
+        # for an effective normalization
+        nresult = normalize_data(result)
+        print('%s: %s' % (nresult['artifact'], nresult['status']))
         # Do not train just yet
-        # model.train(result['dstat'], result['status'])
+        # model.train(nresult['dstat'], nresult['status'])
 
 
 def mqtt_trainer():
