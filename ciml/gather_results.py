@@ -15,6 +15,7 @@
 import datetime
 import gzip
 import io
+import json
 import os
 
 import pandas
@@ -83,13 +84,23 @@ def _get_dstat_file(artifact_link, dataset_name, run_uuid=None):
         return None
 
 def _get_result_for_run(run, dataset_name, session):
-    run_uuid = run.uuid
+    # First try to get the data from disk
+    raw_data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                       'data', dataset_name, 'raw']
+    os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
+    result_file = os.sep.join(raw_data_folder + [run.uuid + '.json.gz'])
+    if os.path.isfile(result_file):
+        try:
+            with gzip.open(result_file, mode='r') as f:
+                return json.loads(f.read())
+        except IOError as ioe:
+            # Something went wrong opening the file, so we won't load this run.
+            print('Run %s found in the local dataset, however: %s',
+                  (run.uuid, ioe))
+            return None
+    # If no local cache, get data from the DB
     result = {}
-    dstat = _get_dstat_file(run.artifacts, dataset_name, run.uuid)
-    if dstat is None:
-        return None
     test_runs = api.get_test_runs_by_run_id(run.uuid, session=session)
-    session.close()
     tests = []
     for test_run in test_runs:
         test = {'status': test_run.status}
@@ -107,7 +118,18 @@ def _get_result_for_run(run, dataset_name, session):
     else:
         result['status'] = 'Fail'
     result['artifact'] = run.artifacts
+    # Cache the json file, without tests
+    with gzip.open(result_file, mode='wb') as local_cache:
+        local_cache.write(json.dumps(result).encode())
     result['tests'] = tests
+    return result
+
+def _get_data_for_run(run, dataset_name, session):
+    # First ensure we can get dstat data
+    dstat = _get_dstat_file(run.artifacts, dataset_name, run.uuid)
+    if dstat is None:
+        return None
+    result = _get_result_for_run(run, dataset_name, session)
     result['dstat'] = dstat
     return result
 
@@ -131,6 +153,7 @@ def get_subunit_results(build_uuid, dataset_name, db_uri):
         result = _get_result_for_run(run, dataset_name, session)
         if result:
             results.append(result)
+    session.close()
     return results
 
 def get_subunit_results_for_run(run, dataset_name, db_uri):
