@@ -18,7 +18,9 @@ from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
 
-db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
+import click
+
+default_db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
 
 
 def normalize_data(result):
@@ -34,7 +36,7 @@ def train_results(results, model):
         nresult = normalize_data(result)
         print('%s: %s' % (nresult['artifact'], nresult['status']))
         # Do not train just yet
-        # model.train(nresult['dstat'], nresult['status'])
+        model.train(nresult['dstat'], nresult['status'])
 
 
 def mqtt_trainer():
@@ -43,25 +45,29 @@ def mqtt_trainer():
                                            'firehose.openstack.org',
                                            'gearman-subunit/#')
     listen_thread.start()
-    dstat_model = dstat_data.DstatTrainer()
+    dstat_model = dstat_data.DstatTrainer('mqtt-dataset')
     while True:
         event = event_queue.get()
         results = gather_results.get_subunit_results(
-            event['build_uuid'], db_uri)
+            event['build_uuid'], 'mqtt-dataset', db_uri)
         train_results(results, dstat_model)
 
 
-def db_trainer():
-    runs = gather_results.get_runs_by_name(db_uri)
-    dstat_model = dstat_data.DstatTrainer()
+@click.command()
+@click.option('--train/--no-train', default=False,
+              help="Whether to only build the dataset or train as well.")
+@click.option('--estimator', default='tf.estimator.DNNClassifier',
+              help='Type of model to be used (not implemented yet).')
+@click.option('--dataset',  default="dataset",
+              help="Name of the dataset folder.")
+@click.option('--build-name', default="tempest-full", help="Build name.")
+@click.option('--db-uri', default=default_db_uri, help="DB URI")
+def db_trainer(train, estimator, dataset, build_name, db_uri):
+    runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
+    if train:
+        dstat_model = dstat_data.DstatTrainer(dataset)
     for run in runs:
-        results = gather_results.get_subunit_results_for_run(run, db_uri)
-        train_results(results, dstat_model)
-
-
-def main():
-    mqtt_trainer()
-
-
-if __name__ == "__main__":
-    main()
+        results = gather_results.get_subunit_results_for_run(
+            run, dataset, db_uri)
+        if train:
+            train_results(results, dstat_model)

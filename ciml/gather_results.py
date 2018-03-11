@@ -41,25 +41,24 @@ def _parse_dstat_file(input_io):
     return out
 
 
-def _get_dstat_file(artifact_link, run_uuid=None):
+def _get_dstat_file(artifact_link, dataset_name, run_uuid=None):
     paths = ['controller/logs/dstat-csv_log.txt.gz',
              'controller/logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt.gz']
-    # TODO(andreaf) We may want this configurable if case we build multiple
-    # datasets
-    local_path= 'dataset'
     # TODO(andreaf) This needs to be fixed because when we come different routes
     # we will need to lookup the file from file system or not, and behave
     # differently:
     # - MQTT: new file, file should not be there
     # - DB: file may be there or not
     # - Stable dataset: file must be there
-    local_store = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                               os.pardir, local_path, run_uuid + '.csv.gz'])
-    if os.path.isfile(local_store):
+    raw_data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                       'data', dataset_name, 'raw']
+    os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
+    raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
+    if os.path.isfile(raw_data_file):
         try:
-            with gzip.open(local_store, mode='r') as f:
+            with gzip.open(raw_data_file, mode='r') as f:
                 return _parse_dstat_file(f)
         except IOError as ioe:
             # Something went wrong opening the file, so we won't load this run.
@@ -75,7 +74,7 @@ def _get_dstat_file(artifact_link, run_uuid=None):
         if resp.status_code == 404:
             continue
         # Cache the file locally
-        with gzip.open(local_store, mode='wb') as local_cache:
+        with gzip.open(raw_data_file, mode='wb') as local_cache:
             local_cache.write(resp.text.encode())
         # And return the parse dstat
         f = io.StringIO(resp.text)
@@ -83,10 +82,10 @@ def _get_dstat_file(artifact_link, run_uuid=None):
     else:
         return None
 
-def _get_result_for_run(run, session):
+def _get_result_for_run(run, dataset_name, session):
     run_uuid = run.uuid
     result = {}
-    dstat = _get_dstat_file(run.artifacts, run.uuid)
+    dstat = _get_dstat_file(run.artifacts, dataset_name, run.uuid)
     if dstat is None:
         return None
     test_runs = api.get_test_runs_by_run_id(run.uuid, session=session)
@@ -112,7 +111,7 @@ def _get_result_for_run(run, session):
     result['dstat'] = dstat
     return result
 
-def get_subunit_results(build_uuid, db_uri):
+def get_subunit_results(build_uuid, dataset_name, db_uri):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -129,18 +128,18 @@ def get_subunit_results(build_uuid, db_uri):
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in build_name:
             continue
-        result = _get_result_for_run(run, session)
+        result = _get_result_for_run(run, dataset_name, session)
         if result:
             results.append(result)
     return results
 
-def get_subunit_results_for_run(run, db_uri):
+def get_subunit_results_for_run(run, dataset_name, db_uri):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
-    return [_get_result_for_run(run, session)]
+    return [_get_result_for_run(run, dataset_name, session)]
 
-def get_runs_by_name(db_uri, build_name='tempest-full'):
+def get_runs_by_name(db_uri, build_name):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()

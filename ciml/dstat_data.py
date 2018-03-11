@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import os
 
 import tensorflow as tf
 
@@ -19,7 +20,7 @@ BATCH_SIZE = 1000
 
 
 class DstatTrainer(object):
-    def __init__(self, estimator=tf.estimator.DNNClassifier):
+    def __init__(self, dataset, estimator=tf.estimator.DNNClassifier):
         self.metric_columns = [
             # total cpu usage
             tf.feature_column.numeric_column(key='usr'),
@@ -62,15 +63,21 @@ class DstatTrainer(object):
             tf.feature_column.numeric_column(key='tim'),
             tf.feature_column.numeric_column(key='clo'),
         ]
+        model_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
+                                         os.pardir, 'data', dataset_name, 'model'])
+        os.makedirs(model_data_folder, exist_ok=True)
         self.estimator = estimator(feature_columns=self.metric_columns,
                                    hidden_units=[31, 31],
-                                   n_classes=2)
+                                   n_classes=2,
+                                   model_dir=model_data_folder)
 
     def train(self, dstat_data, status):
 
         def _train_input_function(features, labels, batchsize):
-            dataset = tf.data.Dataset.from_tensor_slices(
-                dict(features), status)
+            # NOTE(andreaf) Not sure where to fit the test result
+            # dataset = tf.data.Dataset.from_tensor_slices(
+            #     dict(features), status)
+            dataset = tf.data.Dataset.from_tensor_slices(dict(features))
             dataset = dataset.batch(batchsize)
             return dataset
 

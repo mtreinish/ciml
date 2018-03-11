@@ -55,4 +55,5 @@ ChangeLog
 .*sw?
 
 # Dataset files
-dataset/*.csv.gz
+data/*
+!data/.keep
