@@ -20,7 +20,7 @@ BATCH_SIZE = 1000
 
 
 class DstatTrainer(object):
-    def __init__(self, dataset, estimator=tf.estimator.DNNClassifier):
+    def __init__(self, dataset_name, estimator=tf.estimator.DNNClassifier):
         self.metric_columns = [
             # total cpu usage
             tf.feature_column.numeric_column(key='usr'),
@@ -63,8 +63,9 @@ class DstatTrainer(object):
             tf.feature_column.numeric_column(key='tim'),
             tf.feature_column.numeric_column(key='clo'),
         ]
-        model_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                                         os.pardir, 'data', dataset_name, 'model'])
+        model_data_folder = os.sep.join([
+            os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
+            dataset_name, 'model'])
         os.makedirs(model_data_folder, exist_ok=True)
         self.estimator = estimator(feature_columns=self.metric_columns,
                                    hidden_units=[31, 31],

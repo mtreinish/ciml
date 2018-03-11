@@ -156,11 +156,15 @@ def get_subunit_results(build_uuid, dataset_name, db_uri):
     session.close()
     return results
 
-def get_subunit_results_for_run(run, dataset_name, db_uri):
-    engine = create_engine(db_uri)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    return [_get_result_for_run(run, dataset_name, session)]
+def get_subunit_results_for_run(run, dataset_name, db_uri=None):
+    if db_uri:
+        # When running from a local set the db_uri is not going to be set
+        engine = create_engine(db_uri)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+    else:
+        session = None
+    return [_get_data_for_run(run, dataset_name, session)]
 
 def get_runs_by_name(db_uri, build_name):
     engine = create_engine(db_uri)

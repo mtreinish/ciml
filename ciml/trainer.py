@@ -13,6 +13,7 @@
 # under the License.
 
 import queue
+import os
 
 from ciml import dstat_data
 from ciml import gather_results
@@ -21,7 +22,6 @@ from ciml import listener
 import click
 
 default_db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
-
 
 def normalize_data(result):
     # Normalize data. This is key to a good prediction.
@@ -34,9 +34,8 @@ def train_results(results, model):
         # Normalize data - take the whole data as we may need results
         # for an effective normalization
         nresult = normalize_data(result)
-        print('%s: %s' % (nresult['artifact'], nresult['status']))
         # Do not train just yet
-        model.train(nresult['dstat'], nresult['status'])
+        # model.train(nresult['dstat'], nresult['status'])
 
 
 def mqtt_trainer():
@@ -71,3 +70,28 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
             run, dataset, db_uri)
         if train:
             train_results(results, dstat_model)
+
+
+@click.command()
+@click.option('--estimator', default='tf.estimator.DNNClassifier',
+              help='Type of model to be used (not implemented yet).')
+@click.option('--dataset',  default="dataset",
+              help="Name of the dataset folder.")
+def local_trainer(estimator, dataset):
+
+    # Our methods expect an object with an uuid field, so build one
+    class _run(object):
+        def __init__(self, uuid):
+            self.uuid = uuid
+            self.artifacts = None
+
+    raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
+                                   os.pardir, 'data', dataset, 'raw'])
+    run_uuids = [f[:-7] for f in os.listdir(raw_data_folder) if
+                 os.path.isfile(os.path.join(raw_data_folder, f)) and
+                 f.endswith('.csv.gz')]
+    dstat_model = dstat_data.DstatTrainer(dataset)
+    for run in run_uuids:
+        results = gather_results.get_subunit_results_for_run(
+            _run(run), dataset)
+        train_results(results, dstat_model)
