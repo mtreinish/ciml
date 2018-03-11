@@ -20,8 +20,12 @@ from ciml import gather_results
 from ciml import listener
 
 import click
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 default_db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
+
 
 def normalize_data(result):
     # Normalize data. This is key to a good prediction.
@@ -77,7 +81,9 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
               help='Type of model to be used (not implemented yet).')
 @click.option('--dataset',  default="dataset",
               help="Name of the dataset folder.")
-def local_trainer(estimator, dataset):
+@click.option('--visualize/--no-visualize', default=False,
+              help="Visualize data")
+def local_trainer(estimator, dataset, visualize):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
@@ -91,7 +97,21 @@ def local_trainer(estimator, dataset):
                  os.path.isfile(os.path.join(raw_data_folder, f)) and
                  f.endswith('.csv.gz')]
     dstat_model = dstat_data.DstatTrainer(dataset)
+    sizes = []
     for run in run_uuids:
         results = gather_results.get_subunit_results_for_run(
             _run(run), dataset)
         train_results(results, dstat_model)
+        if visualize:
+            for result in results:
+                # Prepare some more data if we are going to visualize
+                status = result['status']
+                int_status = -1 if status == 'Fail' else 1
+                sizes.append((result['dstat'].shape[0], int_status))
+
+    if visualize:
+        np_sizes = np.array(sizes)
+        df = pd.DataFrame(np_sizes, columns=['size', 'status'])
+        size_plot = df.plot.scatter(x='size', y='status')
+        fig = size_plot.get_figure()
+        fig.savefig(raw_data_folder + '/sizes_by_result.png')

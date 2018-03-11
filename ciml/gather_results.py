@@ -114,9 +114,9 @@ def _get_result_for_run(run, dataset_name, session):
         test['stop_time'] = stop_time
         tests.append(test)
     if run.fails > 0 or run.passes == 0:
-        result['status'] = 'Success'
-    else:
         result['status'] = 'Fail'
+    else:
+        result['status'] = 'Success'
     result['artifact'] = run.artifacts
     # Cache the json file, without tests
     with gzip.open(result_file, mode='wb') as local_cache:
