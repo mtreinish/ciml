@@ -27,9 +27,18 @@ import pandas as pd
 default_db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
 
 
-def normalize_data(result):
+def normalize_data(result, normalized_length=5500):
     # Normalize data. This is key to a good prediction.
-    # no-op for now
+
+    # Fix length of dataset
+    init_len = len(result)
+    if init_len > normalized_length:
+        result = result[:normalized_length]
+    elif init_len < normalized_length:
+        dstat_keys = result.keys()
+        pad_length = normalized_length - init_len
+        padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
+        result.append(padd)
     return result
 
 
