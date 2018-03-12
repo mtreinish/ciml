@@ -28,8 +28,9 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
 
 
-def normalize_data(result, normalized_length=5500):
-    # Normalize data. This is key to a good prediction.
+def normalize_example(result, normalized_length=5500):
+    # Normalize one sample of data. This is a dstat file which is turned
+    # into a fixed lenght vetor.
 
     # Fix length of dataset
     init_len = len(result)
@@ -44,20 +45,24 @@ def normalize_data(result, normalized_length=5500):
     # Vectorize the dataframe
     vector = pd.Series()
     labels = pd.Series()
+    # Vectors are unrolled examples
+    # Labels are example_ids
     for key in dstat_keys:
         vector = pd.concat([vector, result[key]])
         labels = pd.concat(
             [labels, pd.Series(key, index=np.arange(normalized_length))])
-    return vector, labels
+    # Status is 0 for success, 1 for fail
+    status = 0 if result['status'] == 'Success' else 1
+    return vector, labels, status
 
 
 def train_results(results, model):
     for result in results:
         # Normalize data - take the whole data as we may need results
         # for an effective normalization
-        nresult = normalize_data(result)
+        vector, labels, status = normalize_example(result)
         # Do not train just yet
-        model.train(nresult['dstat'], nresult['status'])
+        model.train(vector, status)
 
 
 def mqtt_trainer():
@@ -114,18 +119,23 @@ def local_trainer(estimator, dataset, visualize):
     run_uuids = [f[:-7] for f in os.listdir(raw_data_folder) if
                  os.path.isfile(os.path.join(raw_data_folder, f)) and
                  f.endswith('.csv.gz')]
-    dstat_model = dstat_data.DstatTrainer(dataset)
+    # run_uuids are the example_ids
     sizes = []
+    # The data for each example
+    examples = []
+    # The test result for each example
+    classes = []
     for run in run_uuids:
         results = gather_results.get_subunit_results_for_run(
             _run(run), dataset)
-        train_results(results, dstat_model)
+        # For one run_uuid we must only get on example (result)
+        result = results[0]
+        vector, _, status = normalize_example(result)
+        examples.append(vector)
+        classes.append(status)
         if visualize:
-            for result in results:
-                # Prepare some more data if we are going to visualize
-                status = result['status']
-                int_status = -1 if status == 'Fail' else 1
-                sizes.append((result['dstat'].shape[0], int_status))
+            # Prepare some more data if we are going to visualize
+            sizes.append((result['dstat'].shape[0], status))
 
     if visualize:
         np_sizes = np.array(sizes)
