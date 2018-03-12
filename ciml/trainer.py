@@ -12,19 +12,20 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import queue
 import os
+import queue
 
 from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
 
 import click
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-default_db_uri = 'mysql+pymysql://query:query@logstash.openstack.org/subunit2sql'
+
+default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
+                  'subunit2sql')
 
 
 def normalize_data(result, normalized_length=5500):
@@ -48,7 +49,7 @@ def train_results(results, model):
         # for an effective normalization
         nresult = normalize_data(result)
         # Do not train just yet
-        # model.train(nresult['dstat'], nresult['status'])
+        model.train(nresult['dstat'], nresult['status'])
 
 
 def mqtt_trainer():
@@ -61,7 +62,7 @@ def mqtt_trainer():
     while True:
         event = event_queue.get()
         results = gather_results.get_subunit_results(
-            event['build_uuid'], 'mqtt-dataset', db_uri)
+            event['build_uuid'], 'mqtt-dataset', default_db_uri)
         train_results(results, dstat_model)
 
 
@@ -70,7 +71,7 @@ def mqtt_trainer():
               help="Whether to only build the dataset or train as well.")
 @click.option('--estimator', default='tf.estimator.DNNClassifier',
               help='Type of model to be used (not implemented yet).')
-@click.option('--dataset',  default="dataset",
+@click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
@@ -88,7 +89,7 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
 @click.command()
 @click.option('--estimator', default='tf.estimator.DNNClassifier',
               help='Type of model to be used (not implemented yet).')
-@click.option('--dataset',  default="dataset",
+@click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")

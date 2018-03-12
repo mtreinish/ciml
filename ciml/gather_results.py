@@ -35,6 +35,7 @@ def _parse_dstat_date(date_str):
                              int(time_pieces[0]),
                              int(time_pieces[1]), int(time_pieces[2]))
 
+
 def _parse_dstat_file(input_io):
     out = pandas.read_csv(input_io, skiprows=6).set_index('time')
     out.index = [_parse_dstat_date(x) for x in out.index]
@@ -47,9 +48,9 @@ def _get_dstat_file(artifact_link, dataset_name, run_uuid=None):
              'controller/logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt.gz']
-    # TODO(andreaf) This needs to be fixed because when we come different routes
-    # we will need to lookup the file from file system or not, and behave
-    # differently:
+    # TODO(andreaf) This needs to be fixed because when we come different
+    # routeswe will need to lookup the file from file system or not, and
+    # behave differently:
     # - MQTT: new file, file should not be there
     # - DB: file may be there or not
     # - Stable dataset: file must be there
@@ -82,6 +83,7 @@ def _get_dstat_file(artifact_link, dataset_name, run_uuid=None):
         return _parse_dstat_file(f)
     else:
         return None
+
 
 def _get_result_for_run(run, dataset_name, session):
     # First try to get the data from disk
@@ -124,6 +126,7 @@ def _get_result_for_run(run, dataset_name, session):
     result['tests'] = tests
     return result
 
+
 def _get_data_for_run(run, dataset_name, session):
     # First ensure we can get dstat data
     dstat = _get_dstat_file(run.artifacts, dataset_name, run.uuid)
@@ -132,6 +135,7 @@ def _get_data_for_run(run, dataset_name, session):
     result = _get_result_for_run(run, dataset_name, session)
     result['dstat'] = dstat
     return result
+
 
 def get_subunit_results(build_uuid, dataset_name, db_uri):
     engine = create_engine(db_uri)
@@ -156,6 +160,7 @@ def get_subunit_results(build_uuid, dataset_name, db_uri):
     session.close()
     return results
 
+
 def get_subunit_results_for_run(run, dataset_name, db_uri=None):
     if db_uri:
         # When running from a local set the db_uri is not going to be set
@@ -165,6 +170,7 @@ def get_subunit_results_for_run(run, dataset_name, db_uri=None):
     else:
         session = None
     return [_get_data_for_run(run, dataset_name, session)]
+
 
 def get_runs_by_name(db_uri, build_name):
     engine = create_engine(db_uri)

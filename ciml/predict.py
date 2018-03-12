@@ -14,17 +14,12 @@
 
 import sys
 
-import requests
-import torch
-
 from ciml import gather_results
 
 
 def main():
-    rnn = torch.load('/tmp/dstat.pt')
     artifact_url = sys.argv[1]
-    dstat_file = gather_results._get_dstat_file(artifact_url)
-
+    gather_results._get_dstat_file(artifact_url)
 
 
 if __name__ == "__main__":
