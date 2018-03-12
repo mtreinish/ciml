@@ -33,14 +33,22 @@ def normalize_data(result, normalized_length=5500):
 
     # Fix length of dataset
     init_len = len(result)
+    dstat_keys = result.keys()
+
     if init_len > normalized_length:
         result = result[:normalized_length]
     elif init_len < normalized_length:
-        dstat_keys = result.keys()
         pad_length = normalized_length - init_len
         padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
-        result.append(padd)
-    return result
+        result = pd.concat([result, padd])
+    # Vectorize the dataframe
+    vector = pd.Series()
+    labels = pd.Series()
+    for key in dstat_keys:
+        vector = pd.concat([vector, result[key]])
+        labels = pd.concat(
+            [labels, pd.Series(key, index=np.arange(normalized_length))])
+    return vector, labels
 
 
 def train_results(results, model):
