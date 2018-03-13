@@ -25,7 +25,7 @@ class SVMTrainer(object):
         # Define feature names including the original CSV column name
         self.feature_columns = [
             tf.contrib.layers.real_valued_column(v + str(k))
-            for k, v in zip(examples, labels)]
+            for k, v in labels.items()]
         self.example_ids = example_ids
         self.examples = examples
         self.classes = classes
@@ -43,8 +43,9 @@ class SVMTrainer(object):
         num_examples = len(self.examples)
         # Dict comprehension to build a dict of features
         # I suppose numpy might be able to do this more efficiently
-        _features = {self.labels[n]: [x[n] for x in self.examples]
-                     for n in range(num_examples)}
+        _features = {
+            self.feature_columns[n].column_name: [x[n] for x in self.examples]
+            for n in range(num_examples)}
         _features['example_id'] = tf.constant(self.example_ids)
         return _features, tf.constant(self.classes)
 

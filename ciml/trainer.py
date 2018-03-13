@@ -35,21 +35,22 @@ def normalize_example(result, normalized_length=5500):
 
     # Fix length of dataset
     init_len = len(result)
-    dstat_keys = result.keys()
+    example = result['dstat']
+    dstat_keys = example.keys()
 
     if init_len > normalized_length:
-        result = result[:normalized_length]
+        example = example[:normalized_length]
     elif init_len < normalized_length:
         pad_length = normalized_length - init_len
         padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
-        result = pd.concat([result, padd])
+        example = pd.concat([example, padd])
     # Vectorize the dataframe
     vector = pd.Series()
     labels = pd.Series()
     # Vectors are unrolled examples
     # Labels are example_ids
     for key in dstat_keys:
-        vector = pd.concat([vector, result[key]])
+        vector = pd.concat([vector, example[key]])
         labels = pd.concat(
             [labels, pd.Series(key, index=np.arange(normalized_length))])
     # Status is 0 for success, 1 for fail
@@ -81,7 +82,7 @@ def mqtt_trainer():
         classes = []
         labels_list = []
         for result in results:
-            vector, labels, status = normalize_example(result['dstat'])
+            vector, labels, status = normalize_example(result)
             examples = vector
             classes = status
             labels_list = labels
@@ -114,13 +115,15 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
 
 
 @click.command()
+@click.option('--train/--no-train', default=True,
+              help="Whether to only build the dataset or train as well.")
 @click.option('--estimator', default='tf.estimator.DNNClassifier',
               help='Type of model to be used (not implemented yet).')
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
-def local_trainer(estimator, dataset, visualize):
+def local_trainer(train, estimator, dataset, visualize):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
@@ -162,5 +165,6 @@ def local_trainer(estimator, dataset, visualize):
     # TODO(andreaf) We should really train on half of the examples
     # The cross-validate on the other half
     # And finally predict on the MQTT inputs
-    model = svm_trainer.SVMTrainer(examples, run_uuids, labels, classes)
-    model.train()
+    if train:
+        model = svm_trainer.SVMTrainer(examples, run_uuids, labels, classes)
+        model.train()
