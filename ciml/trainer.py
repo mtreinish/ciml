@@ -34,8 +34,8 @@ def normalize_example(result, normalized_length=5500):
     # into a fixed lenght vetor.
 
     # Fix length of dataset
-    init_len = len(result)
     example = result['dstat']
+    init_len = len(example)
     dstat_keys = example.keys()
 
     if init_len > normalized_length:
@@ -123,13 +123,18 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
               help="Name of the dataset folder.")
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
-def local_trainer(train, estimator, dataset, visualize):
+@click.option('--steps', default=30, help="Number of training steps")
+def local_trainer(train, estimator, dataset, visualize, steps):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
         def __init__(self, uuid):
             self.uuid = uuid
             self.artifacts = None
+
+    # Normalized lenght and columns
+    normalized_length = 5500
+    dstat_columns = 31
 
     raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
                                    os.pardir, 'data', dataset, 'raw'])
@@ -138,21 +143,27 @@ def local_trainer(train, estimator, dataset, visualize):
                  f.endswith('.csv.gz')]
     # run_uuids are the example_ids
     sizes = []
-    # The data for each example
-    examples = []
+    # The data for each example with a pre-set shape
+    examples = np.ndarray(shape=(len(run_uuids),
+                                 dstat_columns * normalized_length))
     # The test result for each example
     classes = []
-    for run in run_uuids:
+    idx = 0
+    for run in run_uuids[:10]:
         results = gather_results.get_subunit_results_for_run(
             _run(run), dataset)
         # For one run_uuid we must only get on example (result)
         result = results[0]
-        vector, labels, status = normalize_example(result)
-        examples.append(vector)
+        vector, labels, status = normalize_example(
+            result, normalized_length=normalized_length)
+        print("Normalized example %d of %d" % (
+            run_uuids.index(run) + 1, len(run_uuids)), end='\r', flush=True)
+        examples[idx] = vector.values
         classes.append(status)
         if visualize:
             # Prepare some more data if we are going to visualize
             sizes.append((result['dstat'].shape[0], status))
+        idx += 1
 
     if visualize:
         np_sizes = np.array(sizes)
@@ -165,6 +176,8 @@ def local_trainer(train, estimator, dataset, visualize):
     # TODO(andreaf) We should really train on half of the examples
     # The cross-validate on the other half
     # And finally predict on the MQTT inputs
+    classes = np.array(classes)
+    print("\nTraining data shape: (%d, %d)" % examples.shape)
     if train:
         model = svm_trainer.SVMTrainer(examples, run_uuids, labels, classes)
-        model.train()
+        model.train(steps=steps)

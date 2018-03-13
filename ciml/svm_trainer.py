@@ -16,7 +16,7 @@ import os
 
 import tensorflow as tf
 
-BATCH_SIZE = 1000
+tf.logging.set_verbosity(tf.logging.INFO)
 
 
 class SVMTrainer(object):
@@ -44,13 +44,16 @@ class SVMTrainer(object):
         # Dict comprehension to build a dict of features
         # I suppose numpy might be able to do this more efficiently
         _features = {
-            self.feature_columns[n].column_name: [x[n] for x in self.examples]
+            self.feature_columns[n].column_name:
+                tf.constant(self.examples[:, n])
             for n in range(num_examples)}
         _features['example_id'] = tf.constant(self.example_ids)
+        print("Done preparing input data")
         return _features, tf.constant(self.classes)
 
     def feature_engineering_fn(self, features, labels):
         # Further data normalization may happen here
+        print("Built engineered data")
         return features, labels
 
     def train(self, steps=30):
