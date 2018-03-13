@@ -130,7 +130,7 @@ def local_trainer(estimator, dataset, visualize):
             _run(run), dataset)
         # For one run_uuid we must only get on example (result)
         result = results[0]
-        vector, _, status = normalize_example(result)
+        vector, labels, status = normalize_example(result)
         examples.append(vector)
         classes.append(status)
         if visualize:
@@ -143,3 +143,10 @@ def local_trainer(estimator, dataset, visualize):
         size_plot = df.plot.scatter(x='size', y='status')
         fig = size_plot.get_figure()
         fig.savefig(raw_data_folder + '/sizes_by_result.png')
+
+    # Now do the training
+    # TODO(andreaf) We should really train on half of the examples
+    # The cross-validate on the other half
+    # And finally predict on the MQTT inputs
+    model = svm_trainer.SVMTrainer(examples, run_uuids, labels, classes)
+    model.train()
