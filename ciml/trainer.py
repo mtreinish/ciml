@@ -18,6 +18,7 @@ import queue
 from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
+from ciml import svm_trainer
 
 import click
 import numpy as np
@@ -71,12 +72,25 @@ def mqtt_trainer():
                                            'firehose.openstack.org',
                                            'gearman-subunit/#')
     listen_thread.start()
-    dstat_model = dstat_data.DstatTrainer('mqtt-dataset')
+#    dstat_model = dstat_data.DstatTrainer('mqtt-dataset')
     while True:
         event = event_queue.get()
         results = gather_results.get_subunit_results(
             event['build_uuid'], 'mqtt-dataset', default_db_uri)
-        train_results(results, dstat_model)
+        examples = []
+        classes = []
+        labels_list = []
+        for result in results:
+            vector, labels, status = normalize_example(result['dstat'])
+            examples = vector
+            classes = status
+            labels_list = labels
+            if vector and labels and status:
+                break
+        run_uuids = [event['build_uuid']] * len(examples)
+        dstat_model = svm_trainer.SVMTrainer(examples, run_uuids, labels_list,
+                                             classes)
+        dstat_model.train()
 
 
 @click.command()

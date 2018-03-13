@@ -154,7 +154,7 @@ def get_subunit_results(build_uuid, dataset_name, db_uri):
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in build_name:
             continue
-        result = _get_result_for_run(run, dataset_name, session)
+        result = _get_data_for_run(run, dataset_name, session)
         if result:
             results.append(result)
     session.close()

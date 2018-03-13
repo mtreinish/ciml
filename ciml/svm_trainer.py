@@ -20,10 +20,12 @@ BATCH_SIZE = 1000
 
 
 class SVMTrainer(object):
-    def __init__(self, examples, example_ids, labels, classes):
+    def __init__(self, examples, example_ids, labels, classes,
+                 dataset_name='dataset'):
         # Define feature names including the original CSV column name
-        self.feature_columns = [tf.contrib.layers.real_valued_column(v + str(k))
-                                for k,v in labels.items()]
+        self.feature_columns = [
+            tf.contrib.layers.real_valued_column(v + str(k))
+            for k, v in zip(examples, labels)]
         self.example_ids = example_ids
         self.examples = examples
         self.classes = classes
@@ -31,7 +33,7 @@ class SVMTrainer(object):
             os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
             dataset_name, 'model'])
         os.makedirs(model_data_folder, exist_ok=True)
-        self.estimator = estimator(
+        self.estimator = tf.contrib.learn.SVM(
             feature_columns=self.feature_columns,
             example_id_column='example_id',
             model_dir=model_data_folder,
