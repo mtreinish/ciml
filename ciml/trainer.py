@@ -78,7 +78,7 @@ def mqtt_trainer():
     while True:
         event = event_queue.get()
         results = gather_results.get_subunit_results(
-            event['build_uuid'], 'mqtt-dataset', default_db_uri)
+            event['build_uuid'], 'mqtt-dataset', '1s', default_db_uri)
         examples = []
         classes = []
         labels_list = []
@@ -110,7 +110,7 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
         dstat_model = dstat_data.DstatTrainer(dataset)
     for run in runs:
         results = gather_results.get_subunit_results_for_run(
-            run, dataset, db_uri)
+            run, dataset, '1s', db_uri)
         if train:
             train_results(results, dstat_model)
 
@@ -122,11 +122,14 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
               help='Type of model to be used (not implemented yet).')
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
+@click.option('--sample-interval', default=None,
+              help='dstat (down)sampling interval')
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
 @click.option('--steps', default=30, help="Number of training steps")
 @click.option('--gpu', default=False, help='Force using gpu')
-def local_trainer(train, estimator, dataset, visualize, steps, gpu):
+def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
+                  gpu):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
@@ -137,6 +140,13 @@ def local_trainer(train, estimator, dataset, visualize, steps, gpu):
     # Normalized lenght and columns
     normalized_length = 5500
     dstat_columns = 31
+
+    if sample_interval:
+        # Calculate the resample array size
+        rng = pd.date_range('1/1/2012', periods=normalized_length, freq='S')
+        ts = pd.Series(np.ones(len(rng)), index=rng)
+        ts = ts.resample(sample_interval).sum()
+        normalized_length = ts.shape[0]
 
     raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
                                    os.pardir, 'data', dataset, 'raw'])
@@ -153,7 +163,7 @@ def local_trainer(train, estimator, dataset, visualize, steps, gpu):
     idx = 0
     for run in run_uuids:
         results = gather_results.get_subunit_results_for_run(
-            _run(run), dataset)
+            _run(run), dataset, sample_interval)
         # For one run_uuid we must only get on example (result)
         result = results[0]
         vector, labels, status = normalize_example(
@@ -181,8 +191,9 @@ def local_trainer(train, estimator, dataset, visualize, steps, gpu):
     classes = np.array(classes)
     print("\nTraining data shape: (%d, %d)" % examples.shape)
     if train:
-        config = tf.ConfigProto(log_device_placement=True)
+        config = tf.ConfigProto(log_device_placement=True,)
         config.gpu_options.allow_growth = True
+        config.allow_soft_placement = True
         sess = tf.Session(config=config)
         model = svm_trainer.SVMTrainer(examples, run_uuids, labels,
                                        classes, force_gpu=gpu)

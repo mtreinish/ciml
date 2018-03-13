@@ -36,14 +36,17 @@ def _parse_dstat_date(date_str):
                              int(time_pieces[1]), int(time_pieces[2]))
 
 
-def _parse_dstat_file(input_io):
+def _parse_dstat_file(input_io, sample_interval=None):
     out = pandas.read_csv(input_io, skiprows=6).set_index('time')
     out.index = [_parse_dstat_date(x) for x in out.index]
     out.index = pandas.DatetimeIndex(out.index)
+    if sample_interval:
+        out = out.resample(sample_interval).mean()
     return out
 
 
-def _get_dstat_file(artifact_link, dataset_name, run_uuid=None):
+def _get_dstat_file(artifact_link, dataset_name, run_uuid=None,
+                    sample_interval=None):
     paths = ['controller/logs/dstat-csv_log.txt.gz',
              'controller/logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt',
@@ -61,7 +64,7 @@ def _get_dstat_file(artifact_link, dataset_name, run_uuid=None):
     if os.path.isfile(raw_data_file):
         try:
             with gzip.open(raw_data_file, mode='r') as f:
-                return _parse_dstat_file(f)
+                return _parse_dstat_file(f, sample_interval)
         except IOError as ioe:
             # Something went wrong opening the file, so we won't load this run.
             print('Run %s found in the local dataset, however: %s',
@@ -80,7 +83,7 @@ def _get_dstat_file(artifact_link, dataset_name, run_uuid=None):
             local_cache.write(resp.text.encode())
         # And return the parse dstat
         f = io.StringIO(resp.text)
-        return _parse_dstat_file(f)
+        return _parse_dstat_file(f, sample_interval)
     else:
         return None
 
@@ -127,9 +130,10 @@ def _get_result_for_run(run, dataset_name, session):
     return result
 
 
-def _get_data_for_run(run, dataset_name, session):
+def _get_data_for_run(run, dataset_name, sample_interval, session):
     # First ensure we can get dstat data
-    dstat = _get_dstat_file(run.artifacts, dataset_name, run.uuid)
+    dstat = _get_dstat_file(run.artifacts, dataset_name, run.uuid,
+                            sample_interval)
     if dstat is None:
         return None
     result = _get_result_for_run(run, dataset_name, session)
@@ -137,7 +141,7 @@ def _get_data_for_run(run, dataset_name, session):
     return result
 
 
-def get_subunit_results(build_uuid, dataset_name, db_uri):
+def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -154,14 +158,15 @@ def get_subunit_results(build_uuid, dataset_name, db_uri):
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in build_name:
             continue
-        result = _get_data_for_run(run, dataset_name, session)
+        result = _get_data_for_run(run, dataset_name, sample_interval, session)
         if result:
             results.append(result)
     session.close()
     return results
 
 
-def get_subunit_results_for_run(run, dataset_name, db_uri=None):
+def get_subunit_results_for_run(run, dataset_name, sample_interval,
+                                db_uri=None):
     if db_uri:
         # When running from a local set the db_uri is not going to be set
         engine = create_engine(db_uri)
@@ -169,7 +174,7 @@ def get_subunit_results_for_run(run, dataset_name, db_uri=None):
         session = Session()
     else:
         session = None
-    return [_get_data_for_run(run, dataset_name, session)]
+    return [_get_data_for_run(run, dataset_name, sample_interval, session)]
 
 
 def get_runs_by_name(db_uri, build_name):
