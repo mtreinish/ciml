@@ -149,7 +149,7 @@ def local_trainer(train, estimator, dataset, visualize, steps):
     # The test result for each example
     classes = []
     idx = 0
-    for run in run_uuids[:10]:
+    for run in run_uuids:
         results = gather_results.get_subunit_results_for_run(
             _run(run), dataset)
         # For one run_uuid we must only get on example (result)

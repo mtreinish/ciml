@@ -40,13 +40,13 @@ class SVMTrainer(object):
             feature_engineering_fn=self.feature_engineering_fn)
 
     def input_fn(self):
-        num_examples = len(self.examples)
+        num_features = len(self.feature_columns)
         # Dict comprehension to build a dict of features
         # I suppose numpy might be able to do this more efficiently
         _features = {
             self.feature_columns[n].column_name:
                 tf.constant(self.examples[:, n])
-            for n in range(num_examples)}
+            for n in range(num_features)}
         _features['example_id'] = tf.constant(self.example_ids)
         print("Done preparing input data")
         return _features, tf.constant(self.classes)
