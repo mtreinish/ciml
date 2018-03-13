@@ -23,6 +23,7 @@ from ciml import svm_trainer
 import click
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
 
 default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
@@ -124,7 +125,8 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
 @click.option('--steps', default=30, help="Number of training steps")
-def local_trainer(train, estimator, dataset, visualize, steps):
+@click.option('--gpu', default=False, help='Force using gpu')
+def local_trainer(train, estimator, dataset, visualize, steps, gpu):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
@@ -179,5 +181,9 @@ def local_trainer(train, estimator, dataset, visualize, steps):
     classes = np.array(classes)
     print("\nTraining data shape: (%d, %d)" % examples.shape)
     if train:
-        model = svm_trainer.SVMTrainer(examples, run_uuids, labels, classes)
-        model.train(steps=steps)
+        config = tf.ConfigProto(log_device_placement=True)
+        config.gpu_options.allow_growth = True
+        sess = tf.Session(config=config)
+        model = svm_trainer.SVMTrainer(examples, run_uuids, labels,
+                                       classes, force_gpu=gpu)
+        sess.run(model.train(steps=steps))

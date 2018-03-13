@@ -21,7 +21,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 class SVMTrainer(object):
     def __init__(self, examples, example_ids, labels, classes,
-                 dataset_name='dataset'):
+                 dataset_name='dataset', force_gpu=False):
         # Define feature names including the original CSV column name
         self.feature_columns = [
             tf.contrib.layers.real_valued_column(v + str(k))
@@ -29,6 +29,7 @@ class SVMTrainer(object):
         self.example_ids = example_ids
         self.examples = examples
         self.classes = classes
+        self.force_gpu = force_gpu
         model_data_folder = os.sep.join([
             os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
             dataset_name, 'model'])
@@ -57,4 +58,11 @@ class SVMTrainer(object):
         return features, labels
 
     def train(self, steps=30):
-        self.estimator.fit(input_fn=self.input_fn, steps=steps)
+        if self.force_gpu:
+            with tf.device('/device:GPU:0'):
+                self.estimator.fit(input_fn=self.input_fn, steps=steps)
+                train_loss = self.estimator.evaluate(input_fn=self.input_fn)
+        else:
+            self.estimator.fit(input_fn=self.input_fn, steps=steps)
+            train_loss = self.estimator.evaluate(input_fn=self.input_fn)
+        print('Training loss %r' % train_loss)
