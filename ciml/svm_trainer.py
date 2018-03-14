@@ -67,8 +67,10 @@ class SVMTrainer(object):
         if self.force_gpu:
             with tf.device('/device:GPU:0'):
                 self.estimator.fit(input_fn=self.input_fn, steps=steps)
-                train_loss = self.estimator.evaluate(input_fn=self.input_fn)
+                train_loss = self.estimator.evaluate(input_fn=self.input_fn,
+                                                     steps=1)
         else:
             self.estimator.fit(input_fn=self.input_fn, steps=steps)
-            train_loss = self.estimator.evaluate(input_fn=self.input_fn)
+            train_loss = self.estimator.evaluate(input_fn=self.input_fn,
+                                                 steps=1)
         print('Training loss %r' % train_loss)

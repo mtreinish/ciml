@@ -261,4 +261,4 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         model = svm_trainer.SVMTrainer(examples, run_uuids, labels,
                                        classes, dataset_name=dataset,
                                        force_gpu=gpu)
-        sess.run(model.train(steps=steps))
+        model.train(steps=steps)
