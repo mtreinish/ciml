@@ -14,6 +14,7 @@
 
 import os
 
+import numpy as np
 import tensorflow as tf
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -23,8 +24,14 @@ class SVMTrainer(object):
     def __init__(self, examples, example_ids, labels, classes,
                  dataset_name='dataset', force_gpu=False):
         # Define feature names including the original CSV column name
-        self.feature_columns = [
-            tf.contrib.layers.real_valued_column(x) for x in labels]
+        self.feature_columns = []
+        for n in range(len(labels)):
+            feature_data = examples[:, n]
+            mean_fd = np.mean(feature_data)
+            max_min_fd = np.max(feature_data) - np.min(feature_data)
+            self.feature_columns.append(
+                tf.contrib.layers.real_valued_column(
+                    labels[n], normalizer=lambda x: (x - mean_fd) / max_min_fd))
         self.example_ids = example_ids
         self.examples = examples
         self.classes = classes

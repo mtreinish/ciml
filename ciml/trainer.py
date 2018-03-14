@@ -23,6 +23,7 @@ from ciml import listener
 from ciml import svm_trainer
 
 import click
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -44,6 +45,7 @@ def normalize_example(result, normalized_length=5500, labels=None):
     # Cut or pad with zeros
     if init_len > normalized_length:
         example = example[:normalized_length]
+        print("cut from %d to %d" % (init_len, normalized_length))
     elif init_len < normalized_length:
         pad_length = normalized_length - init_len
         padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
@@ -144,6 +146,12 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
 
     # Normalized lenght before resampling
     normalized_length = 5500
+    if sample_interval:
+        # Calculate the desired normalized lenght after resample
+        rng = pd.date_range('1/1/2012', periods=normalized_length, freq='S')
+        ts = pd.Series(np.ones(len(rng)), index=rng)
+        ts = ts.resample(sample_interval).sum()
+        normalized_length = ts.shape[0]
 
     raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
                                    os.pardir, 'data', dataset, 'raw'])
@@ -175,7 +183,6 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         # Setup the numpy matrix and sizes
         if len(examples) == 0:
             # Adjust normalized_length to the actual re-sample one
-            normalized_length = result['dstat'].shape[0]
             examples = np.ndarray(
                 shape=(len(run_uuids),
                        len(result['dstat'].columns) * normalized_length))
@@ -197,6 +204,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
             fig = data_plot.get_figure()
             fig.savefig(os.sep.join(
                 data_plots_folder + [sample_interval + "_example_" + str(idx)]))
+            plt.close(fig)
         idx += 1
 
     if visualize:
@@ -205,6 +213,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         size_plot = df.plot.scatter(x='size', y='status')
         fig = size_plot.get_figure()
         fig.savefig(os.sep.join(data_plots_folder +  ['sizes_by_result.png']))
+        plt.close(fig)
 
     # Now do the training
     # TODO(andreaf) We should really train on half of the examples
