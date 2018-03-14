@@ -143,8 +143,9 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
               help="Visualize data")
 @click.option('--steps', default=30, help="Number of training steps")
 @click.option('--gpu', default=False, help='Force using gpu')
+@click.option('--debug/--no-debug', default=False)
 def local_trainer(train, estimator, dataset, sample_interval, features_regex,
-                  visualize, steps, gpu):
+                  visualize, steps, gpu, debug):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
@@ -186,8 +187,9 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         result = results[0]
         # Filtering by columns
         df = result['dstat']
-        col_regex = re.compile(features_regex)
-        result['dstat'] = df[list(filter(col_regex.search, df.columns))]
+        if features_regex:
+            col_regex = re.compile(features_regex)
+            result['dstat'] = df[list(filter(col_regex.search, df.columns))]
         # Setup the numpy matrix and sizes
         if len(examples) == 0:
             # Adjust normalized_length to the actual re-sample one
@@ -244,6 +246,8 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     classes = np.array(classes)
     print("\nTraining data shape: (%d, %d)" % examples.shape)
     if train:
+        if debug:
+            tf.logging.set_verbosity(tf.logging.DEBUG)
         config = tf.ConfigProto(log_device_placement=True,)
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
