@@ -127,6 +127,7 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
     for run in runs:
         results = gather_results.get_subunit_results_for_run(
             run, dataset, '1s', db_uri)
+        print('Acquired run %s' % run.uuid)
         if train:
             train_results(results, dstat_model)
 
