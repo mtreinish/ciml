@@ -75,6 +75,18 @@ def normalize_example(result, normalized_length=5500, labels=None):
     return vector, status, labels
 
 
+def normalize_dataset(examples, labels):
+    _features = np.ndarray(shape=(examples.shape[1], examples.shape[0]))
+    for n in range(len(labels)):
+        print("Normalizing feature %d of %d" % (n+1, len(labels)), end='\r',
+                                                flush=True)
+        feature_data = examples[:, n]
+        mean_fd = np.mean(feature_data)
+        max_min_fd = np.max(feature_data) - np.min(feature_data)
+        _features[n] = list(
+            map(lambda x: (x - mean_fd) / max_min_fd, feature_data))
+    return _features.transpose()
+
 def train_results(results, model):
     for result in results:
         # Normalize data - take the whole data as we may need results
@@ -212,6 +224,8 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
             labels = new_labels
         print("Normalized example %d of %d" % (
             run_uuids.index(run) + 1, len(run_uuids)), end='\r', flush=True)
+        print('\n')
+        # Examples is an np ndarrays
         examples[idx] = vector.values
         classes.append(status)
         if visualize:
@@ -237,6 +251,16 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 data_plots_folder + [figure_name % "unrolled"]))
             plt.close(fig)
         idx += 1
+    # Perform dataset-wise normalization
+    n_examples = normalize_dataset(examples, labels)
+    if visualize:
+        for n in range(len(run_uuids)):
+            figure_name = sample_interval + "_%s_" + str(n)
+            unrolled_norm_plot = pd.Series(n_examples[n]).plot()
+            fig = unrolled_norm_plot.get_figure()
+            fig.savefig(os.sep.join(
+                data_plots_folder + [figure_name % "normalized"]))
+            plt.close(fig)
 
     if visualize:
         np_sizes = np.array(sizes)
@@ -251,7 +275,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     # The cross-validate on the other half
     # And finally predict on the MQTT inputs
     classes = np.array(classes)
-    print("\nTraining data shape: (%d, %d)" % examples.shape)
+    print("\nTraining data shape: (%d, %d)" % n_examples.shape)
     if train:
         if debug:
             tf.logging.set_verbosity(tf.logging.DEBUG)
@@ -259,7 +283,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
         sess = tf.Session(config=config)
-        model = svm_trainer.SVMTrainer(examples, run_uuids, labels,
+        model = svm_trainer.SVMTrainer(n_examples, run_uuids, labels,
                                        classes, dataset_name=dataset,
                                        force_gpu=gpu)
         model.train(steps=steps)
