@@ -170,8 +170,9 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         result = results[0]
         # Filtering by columns
         df = result['dstat']
-        col_regex = re.compile(features_regex)
-        result['dstat'] = df[list(filter(col_regex.search, df.columns))]
+        if features_regex:
+            col_regex = re.compile(features_regex)
+            result['dstat'] = df[list(filter(col_regex.search, df.columns))]
         # Setup the numpy matrix and sizes
         if len(examples) == 0:
             # Adjust normalized_length to the actual re-sample one
