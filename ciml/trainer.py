@@ -150,6 +150,9 @@ def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
 
     raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
                                    os.pardir, 'data', dataset, 'raw'])
+    data_plots_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                         'data', dataset, 'plots']
+    os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
     run_uuids = [f[:-7] for f in os.listdir(raw_data_folder) if
                  os.path.isfile(os.path.join(raw_data_folder, f)) and
                  f.endswith('.csv.gz')]
@@ -175,6 +178,11 @@ def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
         if visualize:
             # Prepare some more data if we are going to visualize
             sizes.append((result['dstat'].shape[0], status))
+            # Plot un-normalized data
+            data_plot = result['dstat'].plot()
+            fig = data_plot.get_figure()
+            fig.savefig(os.sep.join(
+                data_plots_folder + [sample_interval + "_example_" + str(idx)]))
         idx += 1
 
     if visualize:
@@ -182,7 +190,7 @@ def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
         df = pd.DataFrame(np_sizes, columns=['size', 'status'])
         size_plot = df.plot.scatter(x='size', y='status')
         fig = size_plot.get_figure()
-        fig.savefig(raw_data_folder + '/sizes_by_result.png')
+        fig.savefig(os.sep.join(data_plots_folder +  ['sizes_by_result.png']))
 
     # Now do the training
     # TODO(andreaf) We should really train on half of the examples
