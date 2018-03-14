@@ -53,10 +53,10 @@ def fixed_lenght_example(result, normalized_length=5500):
 
 
 def unroll_example(example, normalized_length=5500, labels=None):
-    # Unroll the examples and build labels are feature names
-    np_vector = example.values.flatten()
+    # Unroll the examples
+    np_vector = example.values.flatten('F')
     if not labels:
-        # We need to calculate labels only once
+        # We need to calculate labels only once (feature names)
         labels = [label + str(idx) for label, idx in itertools.product(
             example.columns, range(normalized_length))]
 
@@ -67,7 +67,10 @@ def unroll_example(example, normalized_length=5500, labels=None):
 
 def normalize_example(result, normalized_length=5500, labels=None):
     example = fixed_lenght_example(result, normalized_length)
+    # Normalize status
     status = result['status']
+    passed_statuses = [0, 'Success']
+    status = 0 if status in passed_statuses else 1
     vector, labels = unroll_example(example, normalized_length, labels)
     return vector, status, labels
 
@@ -199,6 +202,9 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         # Normalize data
         example = fixed_lenght_example(result, normalized_length)
         status = result['status']
+        # Normalize status
+        passed_statuses = [0, 'Success']
+        status = 0 if status in passed_statuses else 1
         vector, new_labels = unroll_example(example, normalized_length, labels)
         # Only calculate labels for the first example
         if len(labels) == 0:
@@ -236,7 +242,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         df = pd.DataFrame(np_sizes, columns=['size', 'status'])
         size_plot = df.plot.scatter(x='size', y='status')
         fig = size_plot.get_figure()
-        fig.savefig(os.sep.join(data_plots_folder +  ['sizes_by_result.png']))
+        fig.savefig(os.sep.join(data_plots_folder + ['sizes_by_result.png']))
         plt.close(fig)
 
     # Now do the training
