@@ -259,5 +259,6 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         config.allow_soft_placement = True
         sess = tf.Session(config=config)
         model = svm_trainer.SVMTrainer(examples, run_uuids, labels,
-                                       classes, force_gpu=gpu)
+                                       classes, dataset_name=dataset,
+                                       force_gpu=gpu)
         sess.run(model.train(steps=steps))
