@@ -14,6 +14,7 @@
 
 import os
 import queue
+import re
 
 from ciml import dstat_data
 from ciml import gather_results
@@ -124,12 +125,14 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
               help="Name of the dataset folder.")
 @click.option('--sample-interval', default=None,
               help='dstat (down)sampling interval')
+@click.option('--features-regex', default=None,
+              help='List of dstat features to use (column names)')
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
 @click.option('--steps', default=30, help="Number of training steps")
 @click.option('--gpu', default=False, help='Force using gpu')
-def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
-                  gpu):
+def local_trainer(train, estimator, dataset, sample_interval, features_regex,
+                  visualize, steps, gpu):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
@@ -137,16 +140,8 @@ def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
             self.uuid = uuid
             self.artifacts = None
 
-    # Normalized lenght and columns
+    # Normalized lenght before resampling
     normalized_length = 5500
-    dstat_columns = 31
-
-    if sample_interval:
-        # Calculate the resample array size
-        rng = pd.date_range('1/1/2012', periods=normalized_length, freq='S')
-        ts = pd.Series(np.ones(len(rng)), index=rng)
-        ts = ts.resample(sample_interval).sum()
-        normalized_length = ts.shape[0]
 
     raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
                                    os.pardir, 'data', dataset, 'raw'])
@@ -158,9 +153,10 @@ def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
                  f.endswith('.csv.gz')]
     # run_uuids are the example_ids
     sizes = []
-    # The data for each example with a pre-set shape
-    examples = np.ndarray(shape=(len(run_uuids),
-                                 dstat_columns * normalized_length))
+    # The data for each example. We don't know yet the pre-set shape, so
+    # wait until the first result comes in
+    examples = []
+
     # The test result for each example
     classes = []
     idx = 0
@@ -169,6 +165,18 @@ def local_trainer(train, estimator, dataset, sample_interval, visualize, steps,
             _run(run), dataset, sample_interval)
         # For one run_uuid we must only get on example (result)
         result = results[0]
+        # Filtering by columns
+        df = result['dstat']
+        col_regex = re.compile(features_regex)
+        result['dstat'] = df[list(filter(col_regex.search, df.columns))]
+        # Setup the numpy matrix and sizes
+        if len(examples) == 0:
+            # Adjust normalized_length to the actual re-sample one
+            normalized_length = result['dstat'].shape[0]
+            examples = np.ndarray(
+                shape=(len(run_uuids),
+                       len(result['dstat'].columns) * normalized_length))
+        # Normalize data
         vector, labels, status = normalize_example(
             result, normalized_length=normalized_length)
         print("Normalized example %d of %d" % (
