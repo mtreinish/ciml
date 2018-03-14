@@ -15,6 +15,8 @@
 import os
 
 import numpy as np
+import pandas as pd
+import random
 import tensorflow as tf
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -32,7 +34,7 @@ class SVMTrainer(object):
             self.feature_columns.append(
                 tf.contrib.layers.real_valued_column(
                     labels[n], normalizer=lambda x: (x - mean_fd) / max_min_fd))
-        self.example_ids = example_ids
+        self.example_ids = np.array(example_ids)
         self.examples = examples
         self.classes = classes
         self.force_gpu = force_gpu
@@ -46,17 +48,30 @@ class SVMTrainer(object):
             model_dir=model_data_folder,
             feature_engineering_fn=self.feature_engineering_fn)
 
-    def input_fn(self):
+        # Separate traing set and evaluation set by building randomised lists
+        # of indexes that can be used for examples, example_ids and classes
+        all_indexes = range(len(self.example_ids))
+        self.training_idx = pd.Series(all_indexes).sample(
+            len(self.example_ids)//2).values
+        self.evaluate_idx = list(set(all_indexes) - set(self.training_idx))
+
+    def input_fn(self, idx_filter):
         num_features = len(self.feature_columns)
         # Dict comprehension to build a dict of features
         # I suppose numpy might be able to do this more efficiently
         _features = {
             self.feature_columns[n].column_name:
-                tf.constant(self.examples[:, n])
+                tf.constant(self.examples[idx_filter, n])
             for n in range(num_features)}
-        _features['example_id'] = tf.constant(self.example_ids)
+        _features['example_id'] = tf.constant(self.example_ids[idx_filter])
         print("Done preparing input data")
-        return _features, tf.constant(self.classes)
+        return _features, tf.constant(self.classes[idx_filter])
+
+    def training_input_fn(self):
+        return self.input_fn(self.training_idx)
+
+    def evaluate_input_fn(self):
+        return self.input_fn(self.evaluate_idx)
 
     def feature_engineering_fn(self, features, labels):
         # Further data normalization may happen here
@@ -66,11 +81,11 @@ class SVMTrainer(object):
     def train(self, steps=30):
         if self.force_gpu:
             with tf.device('/device:GPU:0'):
-                self.estimator.fit(input_fn=self.input_fn, steps=steps)
-                train_loss = self.estimator.evaluate(input_fn=self.input_fn,
-                                                     steps=1)
+                self.estimator.fit(input_fn=self.training_input_fn, steps=steps)
+                train_loss = self.estimator.evaluate(
+                    input_fn=self.evaluate_input_fn, steps=1)
         else:
-            self.estimator.fit(input_fn=self.input_fn, steps=steps)
-            train_loss = self.estimator.evaluate(input_fn=self.input_fn,
-                                                 steps=1)
+            self.estimator.fit(input_fn=self.training_input_fn, steps=steps)
+            train_loss = self.estimator.evaluate(
+                input_fn=self.evaluate_input_fn, steps=1)
         print('Training loss %r' % train_loss)
