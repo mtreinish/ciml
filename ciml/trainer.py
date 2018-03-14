@@ -33,7 +33,7 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
 
 
-def normalize_example(result, normalized_length=5500, labels=None):
+def fixed_lenght_example(result, normalized_length=5500):
     # Normalize one sample of data. This is a dstat file which is turned
     # into a fixed lenght vetor.
 
@@ -45,12 +45,14 @@ def normalize_example(result, normalized_length=5500, labels=None):
     # Cut or pad with zeros
     if init_len > normalized_length:
         example = example[:normalized_length]
-        print("cut from %d to %d" % (init_len, normalized_length))
     elif init_len < normalized_length:
         pad_length = normalized_length - init_len
         padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
         example = pd.concat([example, padd])
+    return example
 
+
+def unroll_example(example, normalized_length=5500, labels=None):
     # Unroll the examples and build labels are feature names
     np_vector = example.values.flatten()
     if not labels:
@@ -60,8 +62,14 @@ def normalize_example(result, normalized_length=5500, labels=None):
 
     vector = pd.Series(np_vector)
     # Status is 0 for success, 1 for fail
-    status = 0 if result['status'] == 'Success' else 1
-    return vector, labels, status
+    return vector, labels
+
+
+def normalize_example(result, normalized_length=5500, labels=None):
+    example = fixed_lenght_example(result, normalized_length)
+    status = result['status']
+    vector, labels = unroll_example(example, normalized_length, labels)
+    return vector, status, labels
 
 
 def train_results(results, model):
@@ -187,8 +195,9 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 shape=(len(run_uuids),
                        len(result['dstat'].columns) * normalized_length))
         # Normalize data
-        vector, new_labels, status = normalize_example(
-            result, normalized_length=normalized_length, labels=labels)
+        example = fixed_lenght_example(result, normalized_length)
+        status = result['status']
+        vector, new_labels = unroll_example(example, normalized_length, labels)
         # Only calculate labels for the first example
         if len(labels) == 0:
             labels = new_labels
@@ -199,11 +208,24 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         if visualize:
             # Prepare some more data if we are going to visualize
             sizes.append((result['dstat'].shape[0], status))
+            figure_name = sample_interval + "_%s_" + str(idx)
             # Plot un-normalized data
             data_plot = result['dstat'].plot()
             fig = data_plot.get_figure()
             fig.savefig(os.sep.join(
-                data_plots_folder + [sample_interval + "_example_" + str(idx)]))
+                data_plots_folder + [figure_name % "downsampled"]))
+            plt.close(fig)
+            # Plot fixed size data
+            fixed_plot = example.plot()
+            fig = fixed_plot.get_figure()
+            fig.savefig(os.sep.join(
+                data_plots_folder + [figure_name % "fixedsize"]))
+            plt.close(fig)
+            # Plot unrolled data
+            unrolled_plot = pd.Series(vector).plot()
+            fig = unrolled_plot.get_figure()
+            fig.savefig(os.sep.join(
+                data_plots_folder + [figure_name % "unrolled"]))
             plt.close(fig)
         idx += 1
 
