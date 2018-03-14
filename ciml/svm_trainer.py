@@ -24,8 +24,7 @@ class SVMTrainer(object):
                  dataset_name='dataset', force_gpu=False):
         # Define feature names including the original CSV column name
         self.feature_columns = [
-            tf.contrib.layers.real_valued_column(v + str(k))
-            for k, v in labels.items()]
+            tf.contrib.layers.real_valued_column(x) for x in labels]
         self.example_ids = example_ids
         self.examples = examples
         self.classes = classes

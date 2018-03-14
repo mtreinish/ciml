@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import itertools
 import os
 import queue
 import re
@@ -31,7 +32,7 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
 
 
-def normalize_example(result, normalized_length=5500):
+def normalize_example(result, normalized_length=5500, labels=None):
     # Normalize one sample of data. This is a dstat file which is turned
     # into a fixed lenght vetor.
 
@@ -40,21 +41,22 @@ def normalize_example(result, normalized_length=5500):
     init_len = len(example)
     dstat_keys = example.keys()
 
+    # Cut or pad with zeros
     if init_len > normalized_length:
         example = example[:normalized_length]
     elif init_len < normalized_length:
         pad_length = normalized_length - init_len
         padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
         example = pd.concat([example, padd])
-    # Vectorize the dataframe
-    vector = pd.Series()
-    labels = pd.Series()
-    # Vectors are unrolled examples
-    # Labels are example_ids
-    for key in dstat_keys:
-        vector = pd.concat([vector, example[key]])
-        labels = pd.concat(
-            [labels, pd.Series(key, index=np.arange(normalized_length))])
+
+    # Unroll the examples and build labels are feature names
+    np_vector = example.values.flatten()
+    if not labels:
+        # We need to calculate labels only once
+        labels = [label + str(idx) for label, idx in itertools.product(
+            example.columns, range(normalized_length))]
+
+    vector = pd.Series(np_vector)
     # Status is 0 for success, 1 for fail
     status = 0 if result['status'] == 'Success' else 1
     return vector, labels, status
@@ -159,6 +161,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
 
     # The test result for each example
     classes = []
+    labels = []
     idx = 0
     for run in run_uuids:
         results = gather_results.get_subunit_results_for_run(
@@ -177,8 +180,11 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 shape=(len(run_uuids),
                        len(result['dstat'].columns) * normalized_length))
         # Normalize data
-        vector, labels, status = normalize_example(
-            result, normalized_length=normalized_length)
+        vector, new_labels, status = normalize_example(
+            result, normalized_length=normalized_length, labels=labels)
+        # Only calculate labels for the first example
+        if len(labels) == 0:
+            labels = new_labels
         print("Normalized example %d of %d" % (
             run_uuids.index(run) + 1, len(run_uuids)), end='\r', flush=True)
         examples[idx] = vector.values
