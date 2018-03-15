@@ -141,7 +141,8 @@ def _get_data_for_run(run, dataset_name, sample_interval, session):
     return result
 
 
-def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri):
+def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
+                        build_name='tempest-full'):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -152,11 +153,14 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri):
         meta = api.get_run_metadata(run.uuid, session=session)
         build_names = [x.value for x in meta if x.key == 'build_name']
         if len(build_names) >= 1:
-            build_name = build_names[0]
+            # Skip build_names that aren't selected
+            if not build_name == build_names[0]:
+                continue
+            db_build_name = build_names[0]
         else:
             continue
         # NOTE(mtreinish): Only be concerned with single node to start
-        if 'multinode' in build_name:
+        if 'multinode' in db_build_name:
             continue
         result = _get_data_for_run(run, dataset_name, sample_interval, session)
         if result:
