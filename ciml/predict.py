@@ -59,7 +59,8 @@ def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
         if results:
             print('Obtained dstat file for %s' % event['build_uuid'])
         else:
-            print('Build uuid: %s is not of proper build_name, skipping')
+            print('Build uuid: %s is not of proper build_name, skipping'
+                  % event['build_uuid'])
         for res in results:
             vector, status, labels = trainer.normalize_example(res)
             model = svm_trainer.SVMTrainer(
