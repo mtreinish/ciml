@@ -38,11 +38,14 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 @click.option('--sample-interval', default='1s',
               help='dstat (down)sampling interval')
 @click.option('--build-name', default="tempest-full", help="Build name.")
+@click.option('--debug/--no-debug', default=False)
 def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
-                 build_name):
+                 build_name, debug):
     event_queue = queue.Queue()
     listen_thread = listener.MQTTSubscribe(event_queue, mqtt_hostname, topic)
     listen_thread.start()
+    if debug:
+        tf.logging.set_verbosity(tf.logging.DEBUG)
     while True:
         event = event_queue.get()
         results = gather_results.get_subunit_results(
