@@ -43,10 +43,11 @@ class SVMTrainer(object):
 
         # Separate traing set and evaluation set by building randomised lists
         # of indexes that can be used for examples, example_ids and classes
-        all_indexes = range(len(self.example_ids))
-        self.training_idx = pd.Series(all_indexes).sample(
+        self.all_indexes = range(len(self.example_ids))
+        self.training_idx = pd.Series(self.all_indexes).sample(
             len(self.example_ids) // 2).values
-        self.evaluate_idx = list(set(all_indexes) - set(self.training_idx))
+        self.evaluate_idx = list(
+            set(self.all_indexes) - set(self.training_idx))
 
     def input_fn(self, idx_filter):
         num_features = len(self.feature_columns)

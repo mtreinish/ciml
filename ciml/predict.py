@@ -40,6 +40,38 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
               help='dstat (down)sampling interval')
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--debug/--no-debug', default=False)
+@click.argument('build_uuid')
+def db_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
+               build_name, debug, build_uuid):
+    if debug:
+        tf.logging.set_verbosity(tf.logging.DEBUG)
+    results = gather_results.get_subunit_results(
+        build_uuid, dataset, sample_interval, db_uri, build_name)
+    if results:
+        print('Obtained dstat file for %s' % build_uuid)
+    else:
+        print('Build uuid: %s is not of proper build_name, skipping'
+              % build_uuid)
+    for res in results:
+        vector, status, labels = trainer.normalize_example(res)
+        model = svm_trainer.SVMTrainer(
+            vector, [build_uuid] * len(results), labels, [status],
+            dataset_name=dataset)
+        model.predict()
+
+
+@click.command()
+@click.option('--db-uri', default=default_db_uri, help="DB URI")
+@click.option('--mqtt-hostname', default=default_mqtt_hostname,
+              help='MQTT hostname')
+@click.option('--topic', default='gearman-subunit/#',
+              help='MQTT topic to subscribe to')
+@click.option('--dataset', default="dataset",
+              help="Name of the dataset folder.")
+@click.option('--sample-interval', default='1s',
+              help='dstat (down)sampling interval')
+@click.option('--build-name', default="tempest-full", help="Build name.")
+@click.option('--debug/--no-debug', default=False)
 def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
                  build_name, debug):
     event_queue = queue.Queue()
