@@ -224,7 +224,6 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
             labels = new_labels
         print("Normalized example %d of %d" % (
             run_uuids.index(run) + 1, len(run_uuids)), end='\r', flush=True)
-        print('\n')
         # Examples is an np ndarrays
         examples[idx] = vector.values
         classes.append(status)
@@ -253,6 +252,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         idx += 1
     # Perform dataset-wise normalization
     n_examples = normalize_dataset(examples, labels)
+    print('\n\n')
     if visualize:
         for n in range(len(run_uuids)):
             figure_name = sample_interval + "_%s_" + str(n)
