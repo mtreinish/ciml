@@ -86,9 +86,13 @@ class SVMTrainer(object):
         print('Training loss %r' % train_loss)
 
     def predict_fn(self):
-        return {self.feature_columns[n].column_name: tf.constant(
-            self.examples[self.all_indexes, n]) for n in range(
-                len(self.feature_columns))}
+        res = {}
+        for data, feature in zip(self.examples, self.feature_columns):
+            if feature not in res:
+                res[feature] = [data]
+            else:
+                res[feature].append(data)
+        return res
 
     def predict(self):
         prediction = list(self.estimator.predict(input_fn=self.predict_fn))
