@@ -15,6 +15,7 @@
 import queue
 
 import click
+import tensorflow as tf
 
 from ciml import gather_results
 from ciml import listener
@@ -42,14 +43,23 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
                  build_name, debug):
     event_queue = queue.Queue()
+    if debug:
+        print('Starting MQTT listener')
     listen_thread = listener.MQTTSubscribe(event_queue, mqtt_hostname, topic)
     listen_thread.start()
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
+        print('Entering main loop')
     while True:
         event = event_queue.get()
+        if debug:
+            print('Received event with build uuid %s' % event['build_uuid'])
         results = gather_results.get_subunit_results(
             event['build_uuid'], dataset, sample_interval, db_uri, build_name)
+        if results:
+            print('Obtained dstat file for %s' % event['build_uuid'])
+        else:
+            print('Build uuid: %s is not of proper build_name, skipping')
         for res in results:
             vector, status, labels = trainer.normalize_example(res)
             model = svm_trainer.SVMTrainer(
