@@ -16,7 +16,6 @@ import os
 
 import numpy as np
 import pandas as pd
-import random
 import tensorflow as tf
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -46,7 +45,7 @@ class SVMTrainer(object):
         # of indexes that can be used for examples, example_ids and classes
         all_indexes = range(len(self.example_ids))
         self.training_idx = pd.Series(all_indexes).sample(
-            len(self.example_ids)//2).values
+            len(self.example_ids) // 2).values
         self.evaluate_idx = list(set(all_indexes) - set(self.training_idx))
 
     def input_fn(self, idx_filter):
@@ -75,7 +74,8 @@ class SVMTrainer(object):
     def train(self, steps=30):
         if self.force_gpu:
             with tf.device('/device:GPU:0'):
-                self.estimator.fit(input_fn=self.training_input_fn, steps=steps)
+                self.estimator.fit(input_fn=self.training_input_fn,
+                                   steps=steps)
                 train_loss = self.estimator.evaluate(
                     input_fn=self.evaluate_input_fn, steps=1)
         else:
@@ -84,8 +84,7 @@ class SVMTrainer(object):
                 input_fn=self.evaluate_input_fn, steps=1)
         print('Training loss %r' % train_loss)
 
-
-    def predict_fun(self):
+    def predict_fn(self):
         return {self.feature_columns[n].column_name: tf.constant(
             self.examples[self.all_indexes, n]) for n in range(
                 len(self.feature_columns))}

@@ -13,7 +13,6 @@
 # under the License.
 
 import queue
-import sys
 
 import click
 
@@ -26,6 +25,7 @@ from ciml import trainer
 default_mqtt_hostname = ('firehose.openstack.org')
 default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
+
 
 @click.command()
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
@@ -42,14 +42,14 @@ def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
                  build_name):
     event_queue = queue.Queue()
     listen_thread = listener.MQTTSubscribe(event_queue, mqtt_hostname, topic)
-
+    listen_thread.start()
     while True:
         event = event_queue.get()
         results = gather_results.get_subunit_results(
             event['build_uuid'], dataset, sample_interval, db_uri, build_name)
-        run_uuids = [r['uuid'] for r in results]
         for res in results:
             vector, status, labels = trainer.normalize_example(res)
             model = svm_trainer.SVMTrainer(
-                vector, [event['build_uuid']]*len(results), labels, [status],
-                dataset_name=dataset) 
+                vector, [event['build_uuid']] * len(results), labels, [status],
+                dataset_name=dataset)
+            model.predict()

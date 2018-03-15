@@ -78,14 +78,15 @@ def normalize_example(result, normalized_length=5500, labels=None):
 def normalize_dataset(examples, labels):
     _features = np.ndarray(shape=(examples.shape[1], examples.shape[0]))
     for n in range(len(labels)):
-        print("Normalizing feature %d of %d" % (n+1, len(labels)), end='\r',
-                                                flush=True)
+        print("Normalizing feature %d of %d" % (
+            n + 1, len(labels)), end='\r', flush=True)
         feature_data = examples[:, n]
         mean_fd = np.mean(feature_data)
         max_min_fd = np.max(feature_data) - np.min(feature_data)
         _features[n] = list(
             map(lambda x: (x - mean_fd) / max_min_fd, feature_data))
     return _features.transpose()
+
 
 def train_results(results, model):
     for result in results:
@@ -180,8 +181,8 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
 
     raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
                                    os.pardir, 'data', dataset, 'raw'])
-    data_plots_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                         'data', dataset, 'plots']
+    data_plots_folder = [os.path.dirname(
+        os.path.realpath(__file__)), os.pardir, 'data', dataset, 'plots']
     os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
     run_uuids = [f[:-7] for f in os.listdir(raw_data_folder) if
                  os.path.isfile(os.path.join(raw_data_folder, f)) and
@@ -282,7 +283,6 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         config = tf.ConfigProto(log_device_placement=True,)
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
-        sess = tf.Session(config=config)
         model = svm_trainer.SVMTrainer(n_examples, run_uuids, labels,
                                        classes, dataset_name=dataset,
                                        force_gpu=gpu)
