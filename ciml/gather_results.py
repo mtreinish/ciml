@@ -37,6 +37,15 @@ def _parse_dstat_date(date_str):
 
 
 def _parse_dstat_file(input_io, sample_interval=None):
+    """Parse a single dstat file into a DatetimeIndex.
+
+    Parse a dstat file into a DatetimeIndex.
+    Optionally resample to the specified sample_interval.
+
+    A dstat file is a "rolled" example with size s x d, where:
+    - s is the number of samples (over time) after resampling
+    - d is the number of dstat columns available
+    """
     out = pandas.read_csv(input_io, skiprows=6).set_index('time')
     out.index = [_parse_dstat_date(x) for x in out.index]
     out.index = pandas.DatetimeIndex(out.index)

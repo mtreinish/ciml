@@ -34,9 +34,15 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 
 
 def fixed_lenght_example(result, normalized_length=5500):
-    # Normalize one sample of data. This is a dstat file which is turned
-    # into a fixed lenght vetor.
+    """Normalize one example.
 
+    Normalize one example of data to a fixed length (L) and unroll it.
+    The input is s x d. To achieve fixed lenght:
+    - if s > L, cut each dstat column data to L
+    - if s < L, pad with zeros to reach L
+
+    The output is a pd.DataFrame with shape (L, d)
+    """
     # Fix length of dataset
     example = result['dstat']
     init_len = len(example)
@@ -53,6 +59,19 @@ def fixed_lenght_example(result, normalized_length=5500):
 
 
 def unroll_example(example, normalized_length=5500, labels=None):
+    """Unroll one example and build labels for the unrolled example.
+
+    Unroll one example with shape (L, d) to a pd.Series with shape (L * d,)
+    Labels for the input example are an array with shape (d, ), e.g.:
+        ['usr', 'sys', ... , 'clo']
+    Labels for the output example are an array with shape (L * d, ), e.g.:
+        ['usr1', ... , 'usrL', ... , 'clo1', ... , 'cloN']
+
+    Labels are only calculated if not input labels are provide, so we can
+    calculate them only once. Labels are a plain python list.
+
+    f = L * d is the number of features for the model.
+    """
     # Unroll the examples
     np_vector = example.values.flatten('F')
     if not labels:
@@ -61,11 +80,16 @@ def unroll_example(example, normalized_length=5500, labels=None):
             example.columns, range(normalized_length))]
 
     vector = pd.Series(np_vector)
-    # Status is 0 for success, 1 for fail
     return vector, labels
 
 
 def normalize_example(result, normalized_length=5500, labels=None):
+    """Normalize and unroll one example.
+
+    Invokes fixed_lenght_example and unroll_example.
+    Returns the unrolled vector, the single integer that represent that status
+    for the example, and the list of labels.
+    """
     example = fixed_lenght_example(result, normalized_length)
     # Normalize status
     status = result['status']
@@ -76,6 +100,18 @@ def normalize_example(result, normalized_length=5500, labels=None):
 
 
 def normalize_dataset(examples, labels):
+    """Normalize features in a dataset
+
+    Normalize each feature in a dataset. If e is the number of examples we have
+    in the dataset, and f is the number of features, this takes as input a
+    np ndarray with shape (e, f).
+
+    The output is an np ndarray with shape (e, f) where data for each feature
+    is normalized based on values across the examples.
+
+    The normalization formula is x = (x - mean(X)/(max(X) - min(X)), where X
+    is the vector of feature values across examples, and x is any element of X.
+    """
     _features = np.ndarray(shape=(examples.shape[1], examples.shape[0]))
     for n in range(len(labels)):
         print("Normalizing feature %d of %d" % (
