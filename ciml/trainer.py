@@ -83,7 +83,23 @@ def unroll_example(example, normalized_length=5500, labels=None):
     return vector, labels
 
 
-def normalize_example(result, normalized_length=5500, labels=None):
+def get_class(result, class_label='status'):
+    """Get a normalized result for the specified class.
+
+    Get a normalized result for the specified class. Currently supported
+    classes are only one, 'status'. This returns a single value which
+    defines the class the example belongs to.
+    """
+    if class_label == 'status':
+        status = result['status']
+        passed_statuses = [0, 'Success']
+        status = 0 if status in passed_statuses else 1
+        return status
+    else:
+        return None
+
+def normalize_example(result, normalized_length=5500, labels=None,
+                      class_label=None):
     """Normalize and unroll one example.
 
     Invokes fixed_lenght_example and unroll_example.
@@ -92,9 +108,7 @@ def normalize_example(result, normalized_length=5500, labels=None):
     """
     example = fixed_lenght_example(result, normalized_length)
     # Normalize status
-    status = result['status']
-    passed_statuses = [0, 'Success']
-    status = 0 if status in passed_statuses else 1
+    status = get_class(result, class_label)
     vector, labels = unroll_example(example, normalized_length, labels)
     return vector, status, labels
 
@@ -192,13 +206,15 @@ def db_trainer(train, estimator, dataset, build_name, db_uri):
               help='dstat (down)sampling interval')
 @click.option('--features-regex', default=None,
               help='List of dstat features to use (column names)')
+@click.option('--class-label', default='status',
+              help='Label that identifies the type of result for the dataset')
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
 @click.option('--steps', default=30, help="Number of training steps")
 @click.option('--gpu', default=False, help='Force using gpu')
 @click.option('--debug/--no-debug', default=False)
 def local_trainer(train, estimator, dataset, sample_interval, features_regex,
-                  visualize, steps, gpu, debug):
+                  class_label, visualize, steps, gpu, debug):
 
     # Our methods expect an object with an uuid field, so build one
     class _run(object):
@@ -251,10 +267,8 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                        len(result['dstat'].columns) * normalized_length))
         # Normalize data
         example = fixed_lenght_example(result, normalized_length)
-        status = result['status']
         # Normalize status
-        passed_statuses = [0, 'Success']
-        status = 0 if status in passed_statuses else 1
+        status = get_class(result, class_label)
         vector, new_labels = unroll_example(example, normalized_length, labels)
         # Only calculate labels for the first example
         if len(labels) == 0:
