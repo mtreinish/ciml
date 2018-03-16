@@ -132,6 +132,10 @@ def _get_result_for_run(run, dataset_name, session):
     else:
         result['status'] = 0  # Passed
     result['artifact'] = run.artifacts
+    # Get extra run metadata
+    metadata = api.get_run_metadata(run.uuid, session)
+    for md in metadata:
+        result[md['key']] = md['value']
     # Cache the json file, without tests
     with gzip.open(result_file, mode='wb') as local_cache:
         local_cache.write(json.dumps(result).encode())
