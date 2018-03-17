@@ -71,20 +71,11 @@ def db_batch_predict(db_uri, dataset, sample_interval, build_name, debug):
     """
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
-    results = gather_results.get_subunit_results(
-        build_uuid, dataset, sample_interval, db_uri, build_name)
-    if results:
-        print('Obtained dstat file for %s' % build_uuid)
-    else:
-        print('Build uuid: %s is not of proper build_uuid, skipping'
-              % build_uuid)
-    for res in results:
-        vector, status, labels = trainer.normalize_example(res)
-        model = svm_trainer.SVMTrainer(
-            vector, [build_uuid] * len(results), labels, [status],
-            dataset_name=dataset)
-        model.predict()
-
+    # Get the list of runs from the dataset
+    run_uuids = trainer.local_run_uuids(dataset)
+    # Get the list of runs from the DB
+    runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
+    # TBD
 
 @click.command()
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
