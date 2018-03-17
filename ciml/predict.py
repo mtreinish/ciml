@@ -59,7 +59,7 @@ def db_predict(db_uri, dataset, sample_interval, build_name, debug, build_uuid):
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--debug/--no-debug', default=False)
-def db_batch_predict(db_uri, dataset, sample_interval, build_name, debug):
+def db_batch_predict(db_uri, dataset, debug):
     """Run predict on all DB items on included in the dataset yet
 
     Takes a dataset and a build name. It builds the list of runs in the DB
@@ -76,10 +76,10 @@ def db_batch_predict(db_uri, dataset, sample_interval, build_name, debug):
     runs = gather_results.get_runs_by_name(
         db_uri=db_uri, build_name=model_config['build_name'])
     # Run a predict loop, include all runs not in the train dataset
-    predict_runs = [r for r in runs when r.uuid not in run_uuids]
+    predict_runs = [r for r in runs if r.uuid not in run_uuids]
     # Initialize the array
     examples = np.ndarray(
-        shape=(len(predict_runs), model_config['num_features'])
+        shape=(len(predict_runs), model_config['num_features']))
     idx = 0
     for run in predict_runs:
         # This will also store new runs in cache. In future we may want to

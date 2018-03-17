@@ -303,7 +303,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     model_config = {
         'sample_interval': sample_interval,
         'features_regex': features_regex,
-        'normalized_length': normalized_length,
+        'normalized_length': normalized_length
     }
 
     # The test result for each example
@@ -327,8 +327,8 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 shape=(len(run_uuids),
                        len(result['dstat'].columns) * normalized_length))
             model_config['num_columns'] = result['dstat'].columns
-            model_config['num_features'] = len(
-                result['dstat'].columns) * normalized_length
+            model_config['num_features'] = (len(
+                result['dstat'].columns) * normalized_length)
         # Normalize data
         example = fixed_lenght_example(result, normalized_length)
         # Normalize status
