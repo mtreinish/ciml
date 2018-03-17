@@ -58,9 +58,6 @@ def db_predict(db_uri, dataset, sample_interval, build_name, debug, build_uuid):
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
-@click.option('--sample-interval', default='1s',
-              help='dstat (down)sampling interval')
-@click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--debug/--no-debug', default=False)
 def db_batch_predict(db_uri, dataset, sample_interval, build_name, debug):
     """Run predict on all DB items on included in the dataset yet

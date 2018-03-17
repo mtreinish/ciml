@@ -12,7 +12,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import gzip
 import itertools
+import json
 import os
 import queue
 import re
@@ -113,7 +115,7 @@ def normalize_example(result, normalized_length=5500, labels=None,
     return vector, status, labels
 
 
-def normalize_dataset(examples, labels):
+def normalize_dataset(examples, labels, params=None):
     """Normalize features in a dataset
 
     Normalize each feature in a dataset. If e is the number of examples we have
@@ -127,15 +129,20 @@ def normalize_dataset(examples, labels):
     is the vector of feature values across examples, and x is any element of X.
     """
     _features = np.ndarray(shape=(examples.shape[1], examples.shape[0]))
+    params = params or {}
     for n in range(len(labels)):
         print("Normalizing feature %d of %d" % (
             n + 1, len(labels)), end='\r', flush=True)
         feature_data = examples[:, n]
-        mean_fd = np.mean(feature_data)
-        max_min_fd = np.max(feature_data) - np.min(feature_data)
+        if labels[n] in params:
+            mean_fd, max_min_fd = params[labels[n]]
+        else:
+            mean_fd = np.mean(feature_data)
+            max_min_fd = np.max(feature_data) - np.min(feature_data)
+            params[labels[n]] = (mean_fd, max_min_fd)
         _features[n] = list(
             map(lambda x: (x - mean_fd) / max_min_fd, feature_data))
-    return _features.transpose()
+    return _features.transpose(), params
 
 
 def train_results(results, model):
@@ -194,7 +201,32 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
     ts = ts.resample(sample_interval).sum()
     return ts.shape[0]
 
+def save_model_config(dataset, model_config):
+    data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                   'data', dataset]
+    os.makedirs(os.sep.join(data_folder), exist_ok=True)
+    model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
+    existing_config = load_model_config(dataset)
+    # TODO(andreaf) For now we just override things. This would actually be a
+    # good place to fail or at least warn users that the model is being
+    # re-trained with conflicting parameters.
+    if existing_config:
+        model_config = existing_config.update(model_config)
+    with gzip.open(model_config_file, mode='wb') as local_cache:
+        local_cache.write(json.dumps(model_config).encode())
 
+def load_model_config(dataset):
+    data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                   'data', dataset]
+    model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
+    if os.path.isfile(model_config_file):
+        try:
+            with gzip.open(model_config_file, mode='r') as f:
+                return json.loads(f.read())
+        except IOError as ioe:
+            # Something went wrong opening the file, so we won't load this run.
+            print('Dataset config found in the local dataset, however: %s', ioe)
+            return None
 
 @click.command()
 @click.option('--train/--no-train', default=False,
@@ -207,8 +239,8 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
 def db_trainer(train, estimator, dataset, build_name, db_uri):
     runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
-    if train:
-        dstat_model = dstat_data.DstatTrainer(dataset)
+    model_config = {'build_name': build_name}
+    save_model_config(dataset, model_config)
     for run in runs:
         results = gather_results.get_subunit_results_for_run(
             run, dataset, '1s', db_uri)
@@ -261,6 +293,14 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     # The data for each example. We don't know yet the pre-set shape, so
     # wait until the first result comes in
     examples = []
+
+    # Model configuration. We need to cache sample_interval, features-regex and
+    # the normalization parameters for each feature so we can re-use them
+    # during prediction.
+    model_config = {
+        'sample_interval': sample_interval,
+        'features_regex': features_regex,
+    }
 
     # The test result for each example
     classes = []
@@ -319,8 +359,12 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
             plt.close(fig)
         idx += 1
     # Perform dataset-wise normalization
-    n_examples = normalize_dataset(examples, labels)
-    print('\n\n')
+    # NOTE(andreaf) When we train the model we ignore any saved normalization
+    # parameter, since the sample interval and features may be different.
+    n_examples, normalization_params = normalize_dataset(examples, labels)
+    # We do cache the result to normalize the prediction set.
+    model_config['normalization_params'] = normalization_params
+    save_model_config(dataset, model_config)
     if visualize:
         for n in range(len(run_uuids)):
             figure_name = sample_interval + "_%s_" + str(n)
@@ -330,7 +374,6 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 data_plots_folder + [figure_name % "normalized"]))
             plt.close(fig)
 
-    if visualize:
         np_sizes = np.array(sizes)
         df = pd.DataFrame(np_sizes, columns=['size', 'status'])
         size_plot = df.plot.scatter(x='size', y='status')
