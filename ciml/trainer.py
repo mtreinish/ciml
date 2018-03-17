@@ -326,7 +326,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
             examples = np.ndarray(
                 shape=(len(run_uuids),
                        len(result['dstat'].columns) * normalized_length))
-            model_config['num_columns'] = result['dstat'].columns
+            model_config['num_columns'] = len(result['dstat'].columns)
             model_config['num_features'] = (len(
                 result['dstat'].columns) * normalized_length)
         # Normalize data
@@ -343,6 +343,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         # Examples is an np ndarrays
         examples[idx] = vector.values
         classes.append(status)
+        print(model_config)
         if visualize:
             # Prepare some more data if we are going to visualize
             sizes.append((result['dstat'].shape[0], status))
