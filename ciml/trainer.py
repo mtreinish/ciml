@@ -101,7 +101,7 @@ def get_class(result, class_label='status'):
         return None
 
 def normalize_example(result, normalized_length=5500, labels=None,
-                      class_label=None):
+                      class_label='status'):
     """Normalize and unroll one example.
 
     Invokes fixed_lenght_example and unroll_example.
@@ -236,11 +236,14 @@ def load_model_config(dataset):
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--build-name', default="tempest-full", help="Build name.")
+@click.option('--limit', default=0, help="Maximum number of entries")
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
-def db_trainer(train, estimator, dataset, build_name, db_uri):
+def db_trainer(train, estimator, dataset, build_name, limit, db_uri):
     runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
     model_config = {'build_name': build_name}
     save_model_config(dataset, model_config)
+    if limit > 0:
+        runs = runs[:limit]
     for run in runs:
         results = gather_results.get_subunit_results_for_run(
             run, dataset, '1s', db_uri)
@@ -300,6 +303,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     model_config = {
         'sample_interval': sample_interval,
         'features_regex': features_regex,
+        'normalized_length': normalized_length,
     }
 
     # The test result for each example
@@ -322,6 +326,9 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
             examples = np.ndarray(
                 shape=(len(run_uuids),
                        len(result['dstat'].columns) * normalized_length))
+            model_config['num_columns'] = result['dstat'].columns
+            model_config['num_features'] = len(
+                result['dstat'].columns) * normalized_length
         # Normalize data
         example = fixed_lenght_example(result, normalized_length)
         # Normalize status
@@ -330,6 +337,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         # Only calculate labels for the first example
         if len(labels) == 0:
             labels = new_labels
+            model_config['labels'] = labels
         print("Normalized example %d of %d" % (
             run_uuids.index(run) + 1, len(run_uuids)), end='\r', flush=True)
         # Examples is an np ndarrays

@@ -68,11 +68,51 @@ def db_batch_predict(db_uri, dataset, sample_interval, build_name, debug):
     """
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
+    # Get the configuration for the model
+    model_config = trainer.load_model_config(dataset)
     # Get the list of runs from the dataset
     run_uuids = trainer.local_run_uuids(dataset)
     # Get the list of runs from the DB
-    runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
-    # TBD
+    runs = gather_results.get_runs_by_name(
+        db_uri=db_uri, build_name=model_config['build_name'])
+    # Run a predict loop, include all runs not in the train dataset
+    predict_runs = [r for r in runs when r.uuid not in run_uuids]
+    # Initialize the array
+    examples = np.ndarray(
+        shape=(len(predict_runs), model_config['num_features'])
+    idx = 0
+    for run in predict_runs:
+        # This will also store new runs in cache. In future we may want to
+        # train on those as well, but nor now let's try to predict only
+        results = gather_results.get_subunit_results_for_run(
+            run, dataset, model_config['sample_interval'])
+        for result in results:
+            if model_config['features_regex']:
+                col_regex = re.compile(model_config['features_regex'])
+                result['dstat'] = df[list(filter(col_regex.search, df.columns))]
+            # Normalize examples
+            vector, status, _ = trainer.normalize_example(
+                result, model_config['normalized_length'],
+                model_config['labels'])
+            examples[idx] = vector.values
+            classes.append(status)
+            idx += 1
+    # Normalize dataset
+    n_examples, _ = normalize_dataset(
+        examples, labels, params=model_config['normalization_params'])
+    # Prepare other arrays
+    classes = np.array(classes)
+    run_uuids = [r.uuid for r in predict_runs]
+    # Configure TF
+    config = tf.ConfigProto(log_device_placement=True,)
+    config.gpu_options.allow_growth = True
+    config.allow_soft_placement = True
+    # Now do the prediction
+    model = svm_trainer.SVMTrainer(n_examples, run_uuids, labels,
+                                   classes, dataset_name=dataset,
+                                   force_gpu=gpu)
+    predictions = model.predict()
+
 
 @click.command()
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
