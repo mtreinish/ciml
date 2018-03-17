@@ -30,10 +30,6 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 
 @click.command()
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
-@click.option('--mqtt-hostname', default=default_mqtt_hostname,
-              help='MQTT hostname')
-@click.option('--topic', default='gearman-subunit/#',
-              help='MQTT topic to subscribe to')
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--sample-interval', default='1s',
@@ -41,8 +37,7 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--debug/--no-debug', default=False)
 @click.argument('build_uuid')
-def db_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
-               build_name, debug, build_uuid):
+def db_predict(db_uri, dataset, sample_interval, build_name, debug, build_uuid):
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
     results = gather_results.get_subunit_results(
@@ -50,7 +45,7 @@ def db_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
     if results:
         print('Obtained dstat file for %s' % build_uuid)
     else:
-        print('Build uuid: %s is not of proper build_name, skipping'
+        print('Build uuid: %s is not of proper build_uuid, skipping'
               % build_uuid)
     for res in results:
         vector, status, labels = trainer.normalize_example(res)
