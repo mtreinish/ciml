@@ -54,6 +54,37 @@ def db_predict(db_uri, dataset, sample_interval, build_name, debug, build_uuid):
             dataset_name=dataset)
         model.predict()
 
+@click.command()
+@click.option('--db-uri', default=default_db_uri, help="DB URI")
+@click.option('--dataset', default="dataset",
+              help="Name of the dataset folder.")
+@click.option('--sample-interval', default='1s',
+              help='dstat (down)sampling interval')
+@click.option('--build-name', default="tempest-full", help="Build name.")
+@click.option('--debug/--no-debug', default=False)
+def db_batch_predict(db_uri, dataset, sample_interval, build_name, debug):
+    """Run predict on all DB items on included in the dataset yet
+
+    Takes a dataset and a build name. It builds the list of runs in the DB
+    that fit the specified build name, and that are not yet used for training
+    in the specified dataset. It runs prediction on all of them.
+    """
+    if debug:
+        tf.logging.set_verbosity(tf.logging.DEBUG)
+    results = gather_results.get_subunit_results(
+        build_uuid, dataset, sample_interval, db_uri, build_name)
+    if results:
+        print('Obtained dstat file for %s' % build_uuid)
+    else:
+        print('Build uuid: %s is not of proper build_uuid, skipping'
+              % build_uuid)
+    for res in results:
+        vector, status, labels = trainer.normalize_example(res)
+        model = svm_trainer.SVMTrainer(
+            vector, [build_uuid] * len(results), labels, [status],
+            dataset_name=dataset)
+        model.predict()
+
 
 @click.command()
 @click.option('--db-uri', default=default_db_uri, help="DB URI")

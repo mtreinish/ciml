@@ -174,6 +174,28 @@ def mqtt_trainer():
         dstat_model.train()
 
 
+def local_run_uuids(dataset):
+    """Return the list of run_uuids available in a local dataset storage"""
+    raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
+                                   os.pardir, 'data', dataset, 'raw'])
+    run_uuids = [f[:-7] for f in os.listdir(raw_data_folder) if
+                 os.path.isfile(os.path.join(raw_data_folder, f)) and
+                 f.endswith('.csv.gz')]
+    return run_uuids
+
+def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
+    """Returns the normalized lenght for a downsampled example
+
+    Returns the normalized example lenght based on the normalized lenght for
+    a full sample and the sample interval.
+    """
+    rng = pd.date_range('1/1/2012', periods=normalized_length, freq='S')
+    ts = pd.Series(np.ones(len(rng)), index=rng)
+    ts = ts.resample(sample_interval).sum()
+    return ts.shape[0]
+
+
+
 @click.command()
 @click.option('--train/--no-train', default=False,
               help="Whether to only build the dataset or train as well.")
@@ -226,19 +248,14 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     normalized_length = 5500
     if sample_interval:
         # Calculate the desired normalized lenght after resample
-        rng = pd.date_range('1/1/2012', periods=normalized_length, freq='S')
-        ts = pd.Series(np.ones(len(rng)), index=rng)
-        ts = ts.resample(sample_interval).sum()
-        normalized_length = ts.shape[0]
+        normalized_length = get_downsampled_example_lenght(
+            sample_interval, normalized_length)
 
-    raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                                   os.pardir, 'data', dataset, 'raw'])
     data_plots_folder = [os.path.dirname(
         os.path.realpath(__file__)), os.pardir, 'data', dataset, 'plots']
     os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
-    run_uuids = [f[:-7] for f in os.listdir(raw_data_folder) if
-                 os.path.isfile(os.path.join(raw_data_folder, f)) and
-                 f.endswith('.csv.gz')]
+    run_uuids = local_run_uuids(dataset)
+
     # run_uuids are the example_ids
     sizes = []
     # The data for each example. We don't know yet the pre-set shape, so
@@ -322,9 +339,6 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         plt.close(fig)
 
     # Now do the training
-    # TODO(andreaf) We should really train on half of the examples
-    # The cross-validate on the other half
-    # And finally predict on the MQTT inputs
     classes = np.array(classes)
     print("\nTraining data shape: (%d, %d)" % n_examples.shape)
     if train:
