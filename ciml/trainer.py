@@ -319,7 +319,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     model_config['normalization_params'] = normalization_params
     gather_results.save_model_config(dataset, model_config)
     if visualize:
-        for n in range(len(run_uuids)):
+        for n in range(len(runs)):
             figure_name = sample_interval + "_%s_" + str(n)
             unrolled_norm_plot = pd.Series(n_examples[n]).plot()
             fig = unrolled_norm_plot.get_figure()
