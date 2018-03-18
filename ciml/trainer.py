@@ -211,7 +211,9 @@ def save_model_config(dataset, model_config):
     # good place to fail or at least warn users that the model is being
     # re-trained with conflicting parameters.
     if existing_config:
-        model_config = existing_config.update(model_config)
+        existing_config.update(model_config)
+        model_config = existing_config
+
     with gzip.open(model_config_file, mode='wb') as local_cache:
         local_cache.write(json.dumps(model_config).encode())
 
@@ -343,7 +345,6 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         # Examples is an np ndarrays
         examples[idx] = vector.values
         classes.append(status)
-        print(model_config)
         if visualize:
             # Prepare some more data if we are going to visualize
             sizes.append((result['dstat'].shape[0], status))
