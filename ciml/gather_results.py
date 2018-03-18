@@ -54,20 +54,18 @@ def _parse_dstat_file(input_io, sample_interval=None):
     return out
 
 
-def _get_dstat_file(artifact_link, dataset_name, run_uuid=None,
-                    sample_interval=None):
+def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None):
+    """Obtains and parses a dstat file to a pandas.DatetimeIndex
+
+    Finds a dstat file in the local cache or downloads it from the
+    artifacts link, then parses it and resamples it into a pandas.DatetimeIndex.
+    """
     paths = ['controller/logs/dstat-csv_log.txt.gz',
              'controller/logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt.gz']
-    # TODO(andreaf) This needs to be fixed because when we come different
-    # routeswe will need to lookup the file from file system or not, and
-    # behave differently:
-    # - MQTT: new file, file should not be there
-    # - DB: file may be there or not
-    # - Stable dataset: file must be there
     raw_data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                       'data', dataset_name, 'raw']
+                       'data', '.raw']
     os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
     raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
     if os.path.isfile(raw_data_file):
@@ -97,12 +95,12 @@ def _get_dstat_file(artifact_link, dataset_name, run_uuid=None,
         return None
 
 
-def _get_result_for_run(run, dataset_name, session):
+def _get_result_for_run(run, session):
     # First try to get the data from disk
-    raw_data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                       'data', dataset_name, 'raw']
-    os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
-    result_file = os.sep.join(raw_data_folder + [run.uuid + '.json.gz'])
+    metadata_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                       'data', '.metadata']
+    os.makedirs(os.sep.join(metadata_folder), exist_ok=True)
+    result_file = os.sep.join(metadata_folder + [run.uuid + '.json.gz'])
     if os.path.isfile(result_file):
         try:
             with gzip.open(result_file, mode='r') as f:
@@ -143,13 +141,12 @@ def _get_result_for_run(run, dataset_name, session):
     return result
 
 
-def _get_data_for_run(run, dataset_name, sample_interval, session):
+def _get_data_for_run(run, sample_interval, session):
     # First ensure we can get dstat data
-    dstat = _get_dstat_file(run.artifacts, dataset_name, run.uuid,
-                            sample_interval)
+    dstat = _get_dstat_file(run.artifacts, run.uuid, sample_interval)
     if dstat is None:
         return None
-    result = _get_result_for_run(run, dataset_name, session)
+    result = _get_result_for_run(run, session)
     result['dstat'] = dstat
     return result
 
@@ -175,15 +172,14 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in db_build_name:
             continue
-        result = _get_data_for_run(run, dataset_name, sample_interval, session)
+        result = _get_data_for_run(run, sample_interval, session)
         if result:
             results.append(result)
     session.close()
     return results
 
 
-def get_subunit_results_for_run(run, dataset_name, sample_interval,
-                                db_uri=None):
+def get_subunit_results_for_run(run, sample_interval, db_uri=None):
     if db_uri:
         # When running from a local set the db_uri is not going to be set
         engine = create_engine(db_uri)
@@ -191,7 +187,7 @@ def get_subunit_results_for_run(run, dataset_name, sample_interval,
         session = Session()
     else:
         session = None
-    return [_get_data_for_run(run, dataset_name, sample_interval, session)]
+    return [_get_data_for_run(run, sample_interval, session)]
 
 
 def get_runs_by_name(db_uri, build_name):

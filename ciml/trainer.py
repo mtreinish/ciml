@@ -181,14 +181,41 @@ def mqtt_trainer():
         dstat_model.train()
 
 
-def local_run_uuids(dataset):
-    """Return the list of run_uuids available in a local dataset storage"""
-    raw_data_folder = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                                   os.pardir, 'data', dataset, 'raw'])
-    run_uuids = [f[:-7] for f in os.listdir(raw_data_folder) if
-                 os.path.isfile(os.path.join(raw_data_folder, f)) and
-                 f.endswith('.csv.gz')]
-    return run_uuids
+def load_run_uuids(dataset):
+    """Return a list of run objects for a specific dataset_name
+
+    Read the list of run uuids from file and return a list of run objects
+    compatible with the run returned by the DB api. The only valid content
+    in the run objects is the UUID.
+    """
+    # TODO(andreaf) We can cache run data in the .metadata folder as well and
+    # build full run objects here. Alternatively we could build dictionaries
+    # and change gather_results functions to work on the dict as opposed to the
+    # object.
+    class _run(object):
+        def __init__(self, uuid):
+            self.uuid = uuid
+            self.artifacts = None
+
+    dataset_runs = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
+                                os.pardir, 'data', dataset, 'runs.json.gz'])
+    if os.path.isfile(dataset_runs):
+        try:
+            with gzip.open(dataset_runs, mode='r') as f:
+                return [_run(run_uuid) for run_uuid in json.loads(f.read())]
+        except IOError as ioe:
+            # Something went wrong opening the file, so we won't load this run.
+            print('Run %s found in the local dataset, however: %s',
+                  (run.uuid, ioe))
+            return None
+
+def save_run_uuids(dataset, runs):
+    dataset_runs = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
+                                os.pardir, 'data', dataset, 'runs.json.gz'])
+    run_uuids = [run.uuid for run in runs]
+    with gzip.open(dataset_runs, mode='wb') as local_cache:
+        local_cache.write(json.dumps(run_uuids).encode())
+
 
 def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
     """Returns the normalized lenght for a downsampled example
@@ -200,6 +227,7 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
     ts = pd.Series(np.ones(len(rng)), index=rng)
     ts = ts.resample(sample_interval).sum()
     return ts.shape[0]
+
 
 def save_model_config(dataset, model_config):
     data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
@@ -217,6 +245,7 @@ def save_model_config(dataset, model_config):
     with gzip.open(model_config_file, mode='wb') as local_cache:
         local_cache.write(json.dumps(model_config).encode())
 
+
 def load_model_config(dataset):
     data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
                    'data', dataset]
@@ -229,6 +258,7 @@ def load_model_config(dataset):
             # Something went wrong opening the file, so we won't load this run.
             print('Dataset config found in the local dataset, however: %s', ioe)
             return None
+
 
 @click.command()
 @click.option('--train/--no-train', default=False,
@@ -246,9 +276,9 @@ def db_trainer(train, estimator, dataset, build_name, limit, db_uri):
     save_model_config(dataset, model_config)
     if limit > 0:
         runs = runs[:limit]
+    save_run_uuids(dataset, runs)
     for run in runs:
-        results = gather_results.get_subunit_results_for_run(
-            run, dataset, '1s', db_uri)
+        results = gather_results.get_subunit_results_for_run(run, '1s', db_uri)
         print('Acquired run %s' % run.uuid)
         if train:
             train_results(results, dstat_model)
@@ -275,12 +305,6 @@ def db_trainer(train, estimator, dataset, build_name, limit, db_uri):
 def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                   class_label, visualize, steps, gpu, debug):
 
-    # Our methods expect an object with an uuid field, so build one
-    class _run(object):
-        def __init__(self, uuid):
-            self.uuid = uuid
-            self.artifacts = None
-
     # Normalized lenght before resampling
     normalized_length = 5500
     if sample_interval:
@@ -291,7 +315,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     data_plots_folder = [os.path.dirname(
         os.path.realpath(__file__)), os.pardir, 'data', dataset, 'plots']
     os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
-    run_uuids = local_run_uuids(dataset)
+    runs = load_run_uuids(dataset)
 
     # run_uuids are the example_ids
     sizes = []
@@ -312,9 +336,9 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     classes = []
     labels = []
     idx = 0
-    for run in run_uuids:
-        results = gather_results.get_subunit_results_for_run(
-            _run(run), dataset, sample_interval)
+    for run in runs:
+        results = gather_results.get_subunit_results_for_run(run,
+                                                             sample_interval)
         # For one run_uuid we must only get on example (result)
         result = results[0]
         # Filtering by columns
@@ -326,7 +350,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         if len(examples) == 0:
             # Adjust normalized_length to the actual re-sample one
             examples = np.ndarray(
-                shape=(len(run_uuids),
+                shape=(len(runs),
                        len(result['dstat'].columns) * normalized_length))
             model_config['num_columns'] = len(result['dstat'].columns)
             model_config['num_features'] = (len(
@@ -341,7 +365,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
             labels = new_labels
             model_config['labels'] = labels
         print("Normalized example %d of %d" % (
-            run_uuids.index(run) + 1, len(run_uuids)), end='\r', flush=True)
+            runs.index(run) + 1, len(runs)), end='\r', flush=True)
         # Examples is an np ndarrays
         examples[idx] = vector.values
         classes.append(status)
@@ -392,6 +416,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         plt.close(fig)
 
     # Now do the training
+    exmple_ids = [run.uuid for run in runs]
     classes = np.array(classes)
     print("\nTraining data shape: (%d, %d)" % n_examples.shape)
     if train:
@@ -400,7 +425,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         config = tf.ConfigProto(log_device_placement=True,)
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
-        model = svm_trainer.SVMTrainer(n_examples, run_uuids, labels,
+        model = svm_trainer.SVMTrainer(n_examples, exmple_ids, labels,
                                        classes, dataset_name=dataset,
                                        force_gpu=gpu)
         model.train(steps=steps)
