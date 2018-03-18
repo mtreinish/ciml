@@ -145,15 +145,6 @@ def normalize_dataset(examples, labels, params=None):
     return _features.transpose(), params
 
 
-def train_results(results, model):
-    for result in results:
-        # Normalize data - take the whole data as we may need results
-        # for an effective normalization
-        vector, labels, status = normalize_example(result)
-        # Do not train just yet
-        model.train(vector, status)
-
-
 def mqtt_trainer():
     event_queue = queue.Queue()
     listen_thread = listener.MQTTSubscribe(event_queue,
@@ -181,42 +172,6 @@ def mqtt_trainer():
         dstat_model.train()
 
 
-def load_run_uuids(dataset):
-    """Return a list of run objects for a specific dataset_name
-
-    Read the list of run uuids from file and return a list of run objects
-    compatible with the run returned by the DB api. The only valid content
-    in the run objects is the UUID.
-    """
-    # TODO(andreaf) We can cache run data in the .metadata folder as well and
-    # build full run objects here. Alternatively we could build dictionaries
-    # and change gather_results functions to work on the dict as opposed to the
-    # object.
-    class _run(object):
-        def __init__(self, uuid):
-            self.uuid = uuid
-            self.artifacts = None
-
-    dataset_runs = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                                os.pardir, 'data', dataset, 'runs.json.gz'])
-    if os.path.isfile(dataset_runs):
-        try:
-            with gzip.open(dataset_runs, mode='r') as f:
-                return [_run(run_uuid) for run_uuid in json.loads(f.read())]
-        except IOError as ioe:
-            # Something went wrong opening the file, so we won't load this run.
-            print('Run %s found in the local dataset, however: %s',
-                  (run.uuid, ioe))
-            return None
-
-def save_run_uuids(dataset, runs):
-    dataset_runs = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                                os.pardir, 'data', dataset, 'runs.json.gz'])
-    run_uuids = [run.uuid for run in runs]
-    with gzip.open(dataset_runs, mode='wb') as local_cache:
-        local_cache.write(json.dumps(run_uuids).encode())
-
-
 def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
     """Returns the normalized lenght for a downsampled example
 
@@ -229,40 +184,7 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
     return ts.shape[0]
 
 
-def save_model_config(dataset, model_config):
-    data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                   'data', dataset]
-    os.makedirs(os.sep.join(data_folder), exist_ok=True)
-    model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
-    existing_config = load_model_config(dataset)
-    # TODO(andreaf) For now we just override things. This would actually be a
-    # good place to fail or at least warn users that the model is being
-    # re-trained with conflicting parameters.
-    if existing_config:
-        existing_config.update(model_config)
-        model_config = existing_config
-
-    with gzip.open(model_config_file, mode='wb') as local_cache:
-        local_cache.write(json.dumps(model_config).encode())
-
-
-def load_model_config(dataset):
-    data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                   'data', dataset]
-    model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
-    if os.path.isfile(model_config_file):
-        try:
-            with gzip.open(model_config_file, mode='r') as f:
-                return json.loads(f.read())
-        except IOError as ioe:
-            # Something went wrong opening the file, so we won't load this run.
-            print('Dataset config found in the local dataset, however: %s', ioe)
-            return None
-
-
 @click.command()
-@click.option('--train/--no-train', default=False,
-              help="Whether to only build the dataset or train as well.")
 @click.option('--estimator', default='tf.estimator.DNNClassifier',
               help='Type of model to be used (not implemented yet).')
 @click.option('--dataset', default="dataset",
@@ -270,18 +192,16 @@ def load_model_config(dataset):
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--limit', default=0, help="Maximum number of entries")
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
-def db_trainer(train, estimator, dataset, build_name, limit, db_uri):
+def db_trainer(estimator, dataset, build_name, limit, db_uri):
     runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
     model_config = {'build_name': build_name}
-    save_model_config(dataset, model_config)
+    gather_results.save_model_config(dataset, model_config)
     if limit > 0:
         runs = runs[:limit]
-    save_run_uuids(dataset, runs)
+    gather_results.save_run_uuids(dataset, runs)
     for run in runs:
-        results = gather_results.get_subunit_results_for_run(run, '1s', db_uri)
+        gather_results.get_subunit_results_for_run(run, '1s', db_uri)
         print('Acquired run %s' % run.uuid)
-        if train:
-            train_results(results, dstat_model)
 
 
 @click.command()
@@ -304,7 +224,6 @@ def db_trainer(train, estimator, dataset, build_name, limit, db_uri):
 @click.option('--debug/--no-debug', default=False)
 def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                   class_label, visualize, steps, gpu, debug):
-
     # Normalized lenght before resampling
     normalized_length = 5500
     if sample_interval:
@@ -315,7 +234,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     data_plots_folder = [os.path.dirname(
         os.path.realpath(__file__)), os.pardir, 'data', dataset, 'plots']
     os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
-    runs = load_run_uuids(dataset)
+    runs = gather_results.load_run_uuids(dataset)
 
     # run_uuids are the example_ids
     sizes = []
@@ -398,7 +317,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     n_examples, normalization_params = normalize_dataset(examples, labels)
     # We do cache the result to normalize the prediction set.
     model_config['normalization_params'] = normalization_params
-    save_model_config(dataset, model_config)
+    gather_results.save_model_config(dataset, model_config)
     if visualize:
         for n in range(len(run_uuids)):
             figure_name = sample_interval + "_%s_" + str(n)
