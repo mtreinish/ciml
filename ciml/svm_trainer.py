@@ -90,4 +90,4 @@ class SVMTrainer(object):
 
     def predict(self):
         prediction = list(self.estimator.predict(input_fn=self.predict_fn))
-        print(prediction)
+        return prediction

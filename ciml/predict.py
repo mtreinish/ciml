@@ -13,8 +13,10 @@
 # under the License.
 
 import queue
+import re
 
 import click
+import numpy as np
 import tensorflow as tf
 
 from ciml import gather_results
@@ -58,8 +60,10 @@ def db_predict(db_uri, dataset, sample_interval, build_name, debug, build_uuid):
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
+@click.option('--limit', default=0, help="Maximum number of entries")
+@click.option('--gpu', default=False, help='Force using gpu')
 @click.option('--debug/--no-debug', default=False)
-def db_batch_predict(db_uri, dataset, debug):
+def db_batch_predict(db_uri, dataset, limit, gpu, debug):
     """Run predict on all DB items on included in the dataset yet
 
     Takes a dataset and a build name. It builds the list of runs in the DB
@@ -69,36 +73,39 @@ def db_batch_predict(db_uri, dataset, debug):
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
     # Get the configuration for the model
-    model_config = trainer.load_model_config(dataset)
+    model_config = gather_results.load_model_config(dataset)
     # Get the list of runs from the dataset
-    run_uuids = trainer.local_run_uuids(dataset)
+    run_uuids = gather_results.load_run_uuids(dataset)
     # Get the list of runs from the DB
     runs = gather_results.get_runs_by_name(
         db_uri=db_uri, build_name=model_config['build_name'])
     # Run a predict loop, include all runs not in the train dataset
     predict_runs = [r for r in runs if r.uuid not in run_uuids]
+    predict_runs = predict_runs[:limit]
     # Initialize the array
     examples = np.ndarray(
         shape=(len(predict_runs), model_config['num_features']))
     idx = 0
+    classes = []
     for run in predict_runs:
         # This will also store new runs in cache. In future we may want to
         # train on those as well, but nor now let's try to predict only
         results = gather_results.get_subunit_results_for_run(
-            run, dataset, model_config['sample_interval'])
+            run, model_config['sample_interval'], db_uri=db_uri)
         for result in results:
             if model_config['features_regex']:
+                df = result['dstat']
                 col_regex = re.compile(model_config['features_regex'])
                 result['dstat'] = df[list(filter(col_regex.search, df.columns))]
             # Normalize examples
-            vector, status, _ = trainer.normalize_example(
+            vector, status, labels = trainer.normalize_example(
                 result, model_config['normalized_length'],
                 model_config['labels'])
             examples[idx] = vector.values
             classes.append(status)
             idx += 1
     # Normalize dataset
-    n_examples, _ = normalize_dataset(
+    n_examples, _ = trainer.normalize_dataset(
         examples, labels, params=model_config['normalization_params'])
     # Prepare other arrays
     classes = np.array(classes)
@@ -112,6 +119,8 @@ def db_batch_predict(db_uri, dataset, debug):
                                    classes, dataset_name=dataset,
                                    force_gpu=gpu)
     predictions = model.predict()
+    for prediction, actual in zip(predictions, classes):
+        print("Predicted %s, Actual: %s" % (prediction, actual))
 
 
 @click.command()
