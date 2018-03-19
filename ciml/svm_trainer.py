@@ -49,7 +49,7 @@ class SVMTrainer(object):
         self.evaluate_idx = list(
             set(self.all_indexes) - set(self.training_idx))
 
-    def input_fn(self, idx_filter):
+    def input_fn(self, idx_filter, return_classes=True):
         num_features = len(self.feature_columns)
         # Dict comprehension to build a dict of features
         # I suppose numpy might be able to do this more efficiently
@@ -59,13 +59,16 @@ class SVMTrainer(object):
             for n in range(num_features)}
         _features['example_id'] = tf.constant(self.example_ids[idx_filter])
         print("Done preparing input data")
-        return _features, tf.constant(self.classes[idx_filter])
+        if return_classes:
+            return _features, tf.constant(self.classes[idx_filter])
+        else:
+            return _features
 
     def training_input_fn(self):
         return self.input_fn(self.training_idx)
 
     def evaluate_input_fn(self):
-        return self.input_fn(self.evaluate_idx)
+        return self.input_fn(self.evaluate_idx, return_classes=False)
 
     def feature_engineering_fn(self, features, labels):
         # Further data normalization may happen here
