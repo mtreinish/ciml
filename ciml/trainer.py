@@ -203,7 +203,7 @@ def db_trainer(estimator, dataset, build_name, limit, db_uri):
     for run in runs:
         if estimator == 'tf.estimator.DNNClassifier':
             gather_results.get_subunit_results_for_run(run, '1s', db_uri,
-                                                       use_cache=False)
+                                                       use_cache=True)
             print('Acquired run %s' % run.uuid)
         else:
             result = gather_results.get_subunit_results_for_run(

@@ -180,7 +180,8 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
     return results
 
 
-def get_subunit_results_for_run(run, sample_interval, db_uri=None):
+def get_subunit_results_for_run(run, sample_interval, db_uri=None,
+                                use_cache=True):
     if db_uri:
         # When running from a local set the db_uri is not going to be set
         engine = create_engine(db_uri)
@@ -188,7 +189,8 @@ def get_subunit_results_for_run(run, sample_interval, db_uri=None):
         session = Session()
     else:
         session = None
-    return [_get_data_for_run(run, sample_interval, session)]
+    return [_get_data_for_run(run, sample_interval, session,
+                              use_cache=use_cache)]
 
 
 def get_runs_by_name(db_uri, build_name):
