@@ -72,6 +72,8 @@ def normalize_data(result, normalized_length=5500):
     status = build_success_time_series(result)
     if status is None:
         raise TypeError
+    if result['status'] not in status:
+        raise Exception
     features = trainer.fixed_lenght_example(result, normalized_length)
     status = normalize_status(status, normalized_length)
     return features, status
@@ -137,7 +139,6 @@ def train_model(data, results, train_steps=1000, dataset_name='dataset'):
         os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
         dataset_name, 'model'])
     data = data.reset_index()
-    print(data)
     data = data.drop(columns=['index'])
 
     my_input_fn = tf.estimator.inputs.pandas_input_fn(
@@ -155,6 +156,29 @@ def train_model(data, results, train_steps=1000, dataset_name='dataset'):
         input_fn=my_input_fn,
         steps=train_steps)
 
+def evaluate_model(data, dataset_name='dataset'):
+    my_feature_columns = [
+            tf.contrib.layers.real_valued_column(x) for x in data.keys()]
+    model_data_dir = os.sep.join([
+        os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
+        dataset_name, 'model'])
+    data = data.reset_index()
+    data = data.drop(columns=['index'])
+
+    my_input_fn = tf.estimator.inputs.pandas_input_fn(
+        x=data,
+        shuffle=False,
+        batch_size=100,
+        num_threads=1)
+    classifier = tf.estimator.DNNClassifier(
+        model_dir=model_data_dir,
+        feature_columns=my_feature_columns,
+        hidden_units=[250, 250, 250, 250, 250],
+        n_classes=2)
+    train_loss = classifier.evaluate(input_fn=my_input_fn, steps=1)
+    print('Training loss %r' % train_loss)
+
+
 def predict_model(data):
     model_data_dir = os.sep.join([
         os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
@@ -169,4 +193,5 @@ def predict_model(data):
         shuffle=False,
         batch_size=100,
         num_threads=1)
-    predictions = classifier.precict(my_input_fn)
+    predictions = list(classifier.precict(input_fn=my_input_fn))
+    print("Predicted %s" % prediction)
