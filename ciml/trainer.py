@@ -22,6 +22,7 @@ import re
 from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
+from ciml import nn_trainer
 from ciml import svm_trainer
 
 import click
@@ -200,8 +201,21 @@ def db_trainer(estimator, dataset, build_name, limit, db_uri):
         runs = runs[:limit]
     gather_results.save_run_uuids(dataset, runs)
     for run in runs:
-        gather_results.get_subunit_results_for_run(run, '1s', db_uri)
-        print('Acquired run %s' % run.uuid)
+        if estimator == 'tf.estimator.DNNClassifier':
+            gather_results.get_subunit_results_for_run(run, '1s', db_uri,
+                                                       use_cache=False)
+            print('Acquired run %s' % run.uuid)
+        else:
+            result = gather_results.get_subunit_results_for_run(
+                run, '1s', db_uri)[0]
+            print('Acquired run %s' % run.uuid)
+            try:
+                features, labels = nn_trainer.normalize_data(result)
+            except TypeError:
+                print('Unable to normalize data in run %s, '
+                      'skipping' % run.uuid)
+                continue
+            nn_trainer.train_model(features, labels, dataset_name=dataset)
 
 
 @click.command()

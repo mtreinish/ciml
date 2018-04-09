@@ -95,21 +95,22 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None):
         return None
 
 
-def _get_result_for_run(run, session):
+def _get_result_for_run(run, session, use_cache=True):
     # First try to get the data from disk
     metadata_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
                        'data', '.metadata']
     os.makedirs(os.sep.join(metadata_folder), exist_ok=True)
     result_file = os.sep.join(metadata_folder + [run.uuid + '.json.gz'])
-    if os.path.isfile(result_file):
-        try:
-            with gzip.open(result_file, mode='r') as f:
-                return json.loads(f.read())
-        except IOError as ioe:
-            # Something went wrong opening the file, so we won't load this run.
-            print('Run %s found in the local dataset, however: %s',
-                  (run.uuid, ioe))
-            return None
+    if use_cache:
+        if os.path.isfile(result_file):
+            try:
+                with gzip.open(result_file, mode='r') as f:
+                    return json.loads(f.read())
+            except IOError as ioe:
+               # Something went wrong opening the file, so we won't load this run.
+                print('Run %s found in the local dataset, however: %s',
+                      (run.uuid, ioe))
+                return None
     # If no local cache, get data from the DB
     result = {}
     test_runs = api.get_test_runs_by_run_id(run.uuid, session=session)
@@ -141,18 +142,18 @@ def _get_result_for_run(run, session):
     return result
 
 
-def _get_data_for_run(run, sample_interval, session):
+def _get_data_for_run(run, sample_interval, session, use_cache=True):
     # First ensure we can get dstat data
     dstat = _get_dstat_file(run.artifacts, run.uuid, sample_interval)
     if dstat is None:
         return None
-    result = _get_result_for_run(run, session)
+    result = _get_result_for_run(run, session, use_cache)
     result['dstat'] = dstat
     return result
 
 
 def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
-                        build_name='tempest-full'):
+                        build_name='tempest-full', use_cache=True):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -172,7 +173,7 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in db_build_name:
             continue
-        result = _get_data_for_run(run, sample_interval, session)
+        result = _get_data_for_run(run, sample_interval, session, use_cache)
         if result:
             results.append(result)
     session.close()
