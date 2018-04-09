@@ -269,12 +269,17 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     classes = []
     labels = []
     idx = 0
+    skips = 0
     for run in runs:
         results = gather_results.get_subunit_results_for_run(run,
                                                              sample_interval)
         # For one run_uuid we must only get on example (result)
         result = results[0]
         # Filtering by columns
+        if not result:
+            print('\nSkipping run: %s because of missing data' % run)
+            skips += 1
+            continue
         df = result['dstat']
         if features_regex:
             col_regex = re.compile(features_regex)
@@ -325,6 +330,9 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 data_plots_folder + [figure_name % "unrolled"]))
             plt.close(fig)
         idx += 1
+    if skips > 0:
+        print('Unable to train model because of missing runs, remove the '
+              ' missing runs from the dataset and rerun')
     # Perform dataset-wise normalization
     # NOTE(andreaf) When we train the model we ignore any saved normalization
     # parameter, since the sample interval and features may be different.

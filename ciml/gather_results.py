@@ -81,6 +81,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None):
     # If no local cache was found we try to fetch the dstats file via HTTP
     # and we store it in cache.
     for path in paths:
+        if not artifact_link:
+            break
         url = artifact_link + '/' + path
         resp = requests.get(url)
         if resp.status_code == 404:
