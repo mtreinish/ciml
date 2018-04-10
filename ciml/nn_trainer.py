@@ -66,7 +66,14 @@ def normalize_status(status, normalized_length=5500):
         return np.concatenate((status, padd))
 
 
-def normalize_data(result, normalized_length=5500):
+def pad_start(features, status, pad_length=20):
+    status = np.concatenate((np.zeros(pad_length), status))
+    feature_pad = {x: np.zeros(pad_length) for x in features.keys()}
+    features = pd.concat((pd.DataFrame(feature_pad), features))
+    return features, status
+
+
+def normalize_data(result, normalized_length=5500, pad_start=False):
     status = build_success_time_series(result)
     if status is None:
         raise TypeError
@@ -74,6 +81,8 @@ def normalize_data(result, normalized_length=5500):
         raise Exception
     features = trainer.fixed_lenght_example(result, normalized_length)
     status = normalize_status(status, normalized_length)
+    if pad_start:
+        features, status = pad_start(features, status)
     return features, status
 
 
