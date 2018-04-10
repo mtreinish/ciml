@@ -45,10 +45,8 @@ def build_success_time_series(result):
     if fails:
         output = []
         first_fail = min(fails)
-        fail_time = False
         for i in dstat.index:
             if i >= first_fail:
-                fail_time = True
                 output.append(1)
             else:
                 output.append(0)
@@ -124,7 +122,7 @@ def time_series_model(features, labels, mode, params):
         return tf.estimator.EstimatorSpec(
             mode, loss=loss, eval_metric_ops=metrics)
 
-     # Create training op.
+    # Create training op.
     assert mode == tf.estimator.ModeKeys.TRAIN
 
     optimizer = tf.train.AdagradOptimizer(learning_rate=0.1)
@@ -134,7 +132,7 @@ def time_series_model(features, labels, mode, params):
 
 def train_model(data, results, train_steps=1000, dataset_name='dataset'):
     my_feature_columns = [
-            tf.contrib.layers.real_valued_column(x) for x in data.keys()]
+        tf.contrib.layers.real_valued_column(x) for x in data.keys()]
     model_data_dir = os.sep.join([
         os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
         dataset_name, 'model'])
@@ -156,9 +154,10 @@ def train_model(data, results, train_steps=1000, dataset_name='dataset'):
         input_fn=my_input_fn,
         steps=train_steps)
 
+
 def evaluate_model(data, dataset_name='dataset'):
     my_feature_columns = [
-            tf.contrib.layers.real_valued_column(x) for x in data.keys()]
+        tf.contrib.layers.real_valued_column(x) for x in data.keys()]
     model_data_dir = os.sep.join([
         os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
         dataset_name, 'model'])
@@ -179,10 +178,12 @@ def evaluate_model(data, dataset_name='dataset'):
     print('Training loss %r' % train_loss)
 
 
-def predict_model(data):
+def predict_model(data, dataset_name='dataset'):
     model_data_dir = os.sep.join([
         os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
         dataset_name, 'model'])
+    my_feature_columns = [
+        tf.contrib.layers.real_valued_column(x) for x in data.keys()]
     classifier = tf.estimator.DNNClassifier(
         model_dir=model_data_dir,
         feature_columns=my_feature_columns,
@@ -194,4 +195,4 @@ def predict_model(data):
         batch_size=100,
         num_threads=1)
     predictions = list(classifier.precict(input_fn=my_input_fn))
-    print("Predicted %s" % prediction)
+    print("Predicted %s" % predictions)

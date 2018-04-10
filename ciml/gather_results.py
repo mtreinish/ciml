@@ -58,7 +58,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None):
     """Obtains and parses a dstat file to a pandas.DatetimeIndex
 
     Finds a dstat file in the local cache or downloads it from the
-    artifacts link, then parses it and resamples it into a pandas.DatetimeIndex.
+    artifacts link, then parses it and resamples it into a
+    pandas.DatetimeIndex.
     """
     paths = ['controller/logs/dstat-csv_log.txt.gz',
              'controller/logs/dstat-csv_log.txt',
@@ -109,7 +110,8 @@ def _get_result_for_run(run, session, use_cache=True):
                 with gzip.open(result_file, mode='r') as f:
                     return json.loads(f.read())
             except IOError as ioe:
-               # Something went wrong opening the file, so we won't load this run.
+                # Something went wrong opening the file, so we won't load
+                # this run.
                 print('Run %s found in the local dataset, however: %s',
                       (run.uuid, ioe))
                 return None
@@ -230,7 +232,8 @@ def load_model_config(dataset):
                 return json.loads(f.read())
         except IOError as ioe:
             # Something went wrong opening the file, so we won't load this run.
-            print('Dataset config found in the local dataset, however: %s', ioe)
+            print('Dataset config found in the local dataset, however: %s',
+                  ioe)
             return None
 
 
@@ -258,8 +261,7 @@ def load_run_uuids(dataset):
                 return [_run(run_uuid) for run_uuid in json.loads(f.read())]
         except IOError as ioe:
             # Something went wrong opening the file, so we won't load this run.
-            print('Run %s found in the local dataset, however: %s',
-                  (run.uuid, ioe))
+            print('Run found in the local dataset, however: %s', ioe)
             return None
 
 

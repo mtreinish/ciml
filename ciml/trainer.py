@@ -12,14 +12,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import gzip
 import itertools
-import json
 import os
 import queue
 import re
 
-from ciml import dstat_data
 from ciml import gather_results
 from ciml import listener
 from ciml import nn_trainer
@@ -100,6 +97,7 @@ def get_class(result, class_label='status'):
         return status
     else:
         return None
+
 
 def normalize_example(result, normalized_length=5500, labels=None,
                       class_label='status'):

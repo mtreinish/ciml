@@ -39,7 +39,8 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--debug/--no-debug', default=False)
 @click.argument('build_uuid')
-def db_predict(db_uri, dataset, sample_interval, build_name, debug, build_uuid):
+def db_predict(db_uri, dataset, sample_interval, build_name, debug,
+               build_uuid):
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
     results = gather_results.get_subunit_results(
@@ -55,6 +56,7 @@ def db_predict(db_uri, dataset, sample_interval, build_name, debug, build_uuid):
             vector, [build_uuid] * len(results), labels, [status],
             dataset_name=dataset)
         model.predict()
+
 
 @click.command()
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
@@ -96,7 +98,8 @@ def db_batch_predict(db_uri, dataset, limit, gpu, debug):
             if model_config['features_regex']:
                 df = result['dstat']
                 col_regex = re.compile(model_config['features_regex'])
-                result['dstat'] = df[list(filter(col_regex.search, df.columns))]
+                result['dstat'] = df[list(filter(
+                    col_regex.search, df.columns))]
             # Normalize examples
             vector, status, labels = trainer.normalize_example(
                 result, model_config['normalized_length'],
