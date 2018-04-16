@@ -94,6 +94,8 @@ def db_batch_predict(db_uri, dataset, limit, gpu, debug):
     idx = 0
     classes = []
     labels = []
+    print("All runs: %d, dataset size: %d, predict size: %d" % (
+        len(runs), len(run_uuids), len(predict_runs)))
     for run in predict_runs:
         # This will also store new runs in cache. In future we may want to
         # train on those as well, but nor now let's try to predict only
@@ -130,8 +132,19 @@ def db_batch_predict(db_uri, dataset, limit, gpu, debug):
                                    classes, dataset_name=dataset,
                                    force_gpu=gpu)
     predictions = model.predict()
+    errors = []
+    num_passes = 0
     for prediction, actual in zip(predictions, classes):
-        print("Predicted %s, Actual: %s" % (prediction, actual))
+        if prediction['classes'] != actual:
+            errors.append((prediction, actual))
+    print("Prediction of %d inputs completed." % len(classes))
+    print("Input set composition: %d PASS, %s FAIL" % (
+        len([x for x in classes if x == 0]),
+        len([x for x in classes if x == 1])))
+    if len(errors) > 0:
+        print("There were some prediction errors: %s" % errors)
+    else:
+        print("All predicted correctly.")
 
 
 @click.command()
