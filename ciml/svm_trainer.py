@@ -68,7 +68,7 @@ class SVMTrainer(object):
         return self.input_fn(self.training_idx)
 
     def evaluate_input_fn(self):
-        return self.input_fn(self.evaluate_idx, return_classes=False)
+        return self.input_fn(self.evaluate_idx)
 
     def feature_engineering_fn(self, features, labels):
         # Further data normalization may happen here
@@ -89,7 +89,7 @@ class SVMTrainer(object):
         print('Training loss %r' % train_loss)
 
     def predict_fn(self):
-        return self.input_fn(range(len(self.example_ids)))
+        return self.input_fn(range(len(self.example_ids)), return_classes=False)
 
     def predict(self):
         prediction = list(self.estimator.predict(input_fn=self.predict_fn))

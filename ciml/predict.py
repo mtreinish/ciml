@@ -14,6 +14,7 @@
 
 import queue
 import re
+import sys
 
 import click
 import numpy as np
@@ -84,17 +85,24 @@ def db_batch_predict(db_uri, dataset, limit, gpu, debug):
     # Run a predict loop, include all runs not in the train dataset
     predict_runs = [r for r in runs if r.uuid not in run_uuids]
     predict_runs = predict_runs[:limit]
+    if len(predict_runs) == 0:
+        print("Empty prediction set, nothing to do.")
+        sys.exit(0)
     # Initialize the array
     examples = np.ndarray(
         shape=(len(predict_runs), model_config['num_features']))
     idx = 0
     classes = []
+    labels = []
     for run in predict_runs:
         # This will also store new runs in cache. In future we may want to
         # train on those as well, but nor now let's try to predict only
         results = gather_results.get_subunit_results_for_run(
             run, model_config['sample_interval'], db_uri=db_uri)
         for result in results:
+            # Skip runs with no data
+            if result is None:
+                continue
             if model_config['features_regex']:
                 df = result['dstat']
                 col_regex = re.compile(model_config['features_regex'])
