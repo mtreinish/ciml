@@ -16,6 +16,7 @@ import itertools
 import os
 import queue
 import re
+import sys
 
 from ciml import gather_results
 from ciml import listener
@@ -267,7 +268,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
     classes = []
     labels = []
     idx = 0
-    skips = 0
+    skips = []
     for run in runs:
         results = gather_results.get_subunit_results_for_run(run,
                                                              sample_interval)
@@ -275,8 +276,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         result = results[0]
         # Filtering by columns
         if not result:
-            print('\nSkipping run: %s because of missing data' % run)
-            skips += 1
+            skips.append(run.uuid)
             continue
         df = result['dstat']
         if features_regex:
@@ -328,9 +328,13 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 data_plots_folder + [figure_name % "unrolled"]))
             plt.close(fig)
         idx += 1
-    if skips > 0:
-        print('Unable to train model because of missing runs, remove the '
-              ' missing runs from the dataset and rerun')
+    if len(skips) > 0:
+        print('Unable to train model because of missing runs %s' % skips)
+        safe_runs = [run for run in runs if run.uuid not in skips]
+        gather_results.save_run_uuids(dataset, safe_runs)
+        print('The model has been updated to exclude those runs.')
+        print('Please re-run the training step.')
+        sys.exit(1)
     # Perform dataset-wise normalization
     # NOTE(andreaf) When we train the model we ignore any saved normalization
     # parameter, since the sample interval and features may be different.
