@@ -15,6 +15,7 @@
 import datetime
 import gzip
 import io
+import itertools
 import json
 import os
 
@@ -202,7 +203,12 @@ def get_runs_by_name(db_uri, build_name):
     Session = sessionmaker(bind=engine)
     session = Session()
     runs = api.get_runs_by_key_value('build_name', build_name, session=session)
-    return runs
+    fail = [x for x in runs if x.fails > 0]
+    passes = [x for x in runs if x.fails == 0]
+    out = list(itertools.chain.from_iterable(zip(fail, passes)))
+    leftover = (len(out) / 2) + 1
+    full_out = out + passes[int(leftover):]
+    return full_out
 
 
 def save_model_config(dataset, model_config):
