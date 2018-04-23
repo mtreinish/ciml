@@ -133,7 +133,6 @@ def db_batch_predict(db_uri, dataset, limit, gpu, debug):
                                    force_gpu=gpu)
     predictions = model.predict()
     errors = []
-    num_passes = 0
     for prediction, actual in zip(predictions, classes):
         if prediction['classes'] != actual:
             errors.append((prediction, actual))

@@ -216,10 +216,10 @@ def db_trainer(estimator, dataset, build_name, limit, db_uri, evaluate):
                       'skipping' % run.uuid)
                 continue
             if not evaluate:
-               nn_trainer.train_model(features, labels, dataset_name=dataset)
+                nn_trainer.train_model(features, labels, dataset_name=dataset)
             else:
-               nn_trainer.evaluate_model(features, labels,
-                                         dataset_name=dataset)
+                nn_trainer.evaluate_model(features, labels,
+                                          dataset_name=dataset)
 
 
 @click.command()
