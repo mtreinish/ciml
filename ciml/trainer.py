@@ -192,7 +192,8 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--limit', default=0, help="Maximum number of entries")
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
-def db_trainer(estimator, dataset, build_name, limit, db_uri):
+@click.option('--evaluate', default=False, help='Evaluate')
+def db_trainer(estimator, dataset, build_name, limit, db_uri, evaluate):
     runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
     model_config = {'build_name': build_name}
     gather_results.save_model_config(dataset, model_config)
@@ -214,7 +215,11 @@ def db_trainer(estimator, dataset, build_name, limit, db_uri):
                 print('Unable to normalize data in run %s, '
                       'skipping' % run.uuid)
                 continue
-            nn_trainer.train_model(features, labels, dataset_name=dataset)
+            if not evaluate:
+               nn_trainer.train_model(features, labels, dataset_name=dataset)
+            else:
+               nn_trainer.evaluate_model(features, labels,
+                                         dataset_name=dataset)
 
 
 @click.command()
