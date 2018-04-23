@@ -157,14 +157,14 @@ def train_model(data, results, train_steps=1000, dataset_name='dataset'):
     classifier = tf.estimator.DNNClassifier(
         model_dir=model_data_dir,
         feature_columns=my_feature_columns,
-        hidden_units=[250, 250, 250, 250, 250],
+        hidden_units=[2500, 1250, 750, 500, 250],
         n_classes=2)
     classifier.train(
         input_fn=my_input_fn,
         steps=train_steps)
 
 
-def evaluate_model(data, dataset_name='dataset'):
+def evaluate_model(data, results, dataset_name='dataset'):
     my_feature_columns = [
         tf.contrib.layers.real_valued_column(x) for x in data.keys()]
     model_data_dir = os.sep.join([
@@ -175,13 +175,14 @@ def evaluate_model(data, dataset_name='dataset'):
 
     my_input_fn = tf.estimator.inputs.pandas_input_fn(
         x=data,
+        y=pd.Series(results, index=data.index),
         shuffle=False,
         batch_size=100,
         num_threads=1)
     classifier = tf.estimator.DNNClassifier(
         model_dir=model_data_dir,
         feature_columns=my_feature_columns,
-        hidden_units=[250, 250, 250, 250, 250],
+        hidden_units=[2500, 1250, 750, 500, 250],
         n_classes=2)
     train_loss = classifier.evaluate(input_fn=my_input_fn, steps=1)
     print('Training loss %r' % train_loss)
@@ -196,7 +197,7 @@ def predict_model(data, dataset_name='dataset'):
     classifier = tf.estimator.DNNClassifier(
         model_dir=model_data_dir,
         feature_columns=my_feature_columns,
-        hidden_units=[250, 250, 250, 250, 250],
+        hidden_units=[2500, 1250, 750, 500, 250],
         n_classes=2)
     my_input_fn = tf.estimator.inputs.pandas_input_fn(
         x=data,
