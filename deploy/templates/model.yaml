@@ -1,0 +1,110 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: default
+  name: {{ template "ciml.fullname" . }}-services-reader
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources: ["services"]
+  verbs: ["get"]
+- apiGroups: [""] # "" indicates the core API group
+  resources: ["secrets"]
+  verbs: ["create"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ template "ciml.fullname" . }}-read-services
+  namespace: default
+subjects:
+- kind: Group
+  name: system:serviceaccounts
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: {{ template "ciml.fullname" . }}-services-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ template "ciml.fullname" . }}-model-nfs
+  annotations:
+    volume.beta.kubernetes.io/storage-class: {{ .Values.mqtt.storage.class }}
+  labels:
+    app: {{ template "ciml.name" . }}-mqtt
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.mqtt.storage.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "ciml.fullname" . }}-mqtt-predict
+  labels:
+    app: {{ template "ciml.name" . }}-mqtt-predict
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ template "ciml.name" . }}-mqtt-predict
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "ciml.name" . }}-mqtt-predict
+        release: {{ .Release.Name }}
+    spec:
+      initContainers:
+      - name: {{ template "ciml.fullname" . }}-mqtt-init
+        image: "{{ .Values.image.repository }}/{{.Values.mqttWait.image.name }}:{{.Values.mqttWait.image.version }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/root/setvalue.sh"]
+        env:
+          - name: MQTT_CONTAINER_NAME
+            value: {{ template "ciml.fullname" . }}-mqtt
+          - name: MQTT_SECRET_NAME
+            value: {{ template "ciml.fullname" . }}-mqtt
+
+      volumes:
+        - name: {{ template "ciml.fullname" . }}-model-volume
+          persistentVolumeClaim:
+            claimName: {{ template "ciml.fullname" . }}-model-nfs
+      containers:
+        - name: {{ template "ciml.fullname" . }}-mqtt-predict
+          image: "{{ .Values.image.repository }}/{{.Values.predict.image.name }}:{{.Values.predict.image.version }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: {{ template "ciml.fullname" . }}-model-volume
+              mountPath: "/shared"
+          ports:
+            - containerPort: 6006
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "ciml.fullname" . }}-tensorboard
+  labels:
+    app: {{ template "ciml.name" . }}-tensorboard
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 6006
+    targetPort: 6006
+    name: tensorboard
+    protocol: TCP
+  selector:
+    app: {{ template "ciml.name" . }}-mqtt
+    release: {{ .Release.Name }}

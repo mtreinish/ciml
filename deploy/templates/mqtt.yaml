@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ template "ciml.fullname" . }}-mqtt-publisher
+type: Opaque
+data:
+  password: {{ .Values.mqtt.secret | trim | b64enc }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ template "ciml.fullname" . }}-mqtt-nfs
+  annotations:
+    volume.beta.kubernetes.io/storage-class: {{ .Values.mqtt.storage.class }}
+  labels:
+    app: {{ template "ciml.name" . }}-mqtt
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.mqtt.storage.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "ciml.fullname" . }}-mqtt
+  labels:
+    app: {{ template "ciml.name" . }}-mqtt
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ template "ciml.name" . }}-mqtt
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "ciml.name" . }}-mqtt
+        release: {{ .Release.Name }}
+    spec:
+      volumes:
+        - name: {{ template "ciml.fullname" . }}-mqtt-volume
+          persistentVolumeClaim:
+            claimName: {{ template "ciml.fullname" . }}-mqtt-nfs
+      containers:
+        - name: {{ template "ciml.fullname" . }}-mqtt
+          image: "{{ .Values.image.repository }}/{{.Values.mqtt.image.name }}:{{.Values.mqtt.image.version }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: MQTT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "ciml.fullname" . }}-mqtt-publisher
+                  key: password
+          volumeMounts:
+            - name: {{ template "ciml.fullname" . }}-mqtt-volume
+              mountPath: "/shared"
+          ports:
+            - containerPort: 80
+            - containerPort: 1883
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "ciml.fullname" . }}-mqtt
+  labels:
+    app: {{ template "ciml.name" . }}-mqtt
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 1883
+    targetPort: 1883
+    name: mqtt
+    protocol: TCP
+  - port: 80
+    targetPort: 80
+    name: http
+    protocol: TCP
+  selector:
+    app: {{ template "ciml.name" . }}-mqtt
+    release: {{ .Release.Name }}
