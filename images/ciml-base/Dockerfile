@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:latest
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -35,8 +35,8 @@ RUN pip3 --no-cache-dir install \
     python3 -m ipykernel.kernelspec
 
 # Install TensorFlow CPU version from central repo
-RUN pip3 --no-cache-dir install \
-    https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.6.0-cp35-cp35m-linux_x86_64.whl
+#RUN pip3 --no-cache-dir install \
+#    https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.7.0-cp36-cp36m-linux_x86_64.whl
 
 RUN git clone https://github.com/mtreinish/ciml.git /ciml
 RUN pip3 --no-cache-dir install -U /ciml
