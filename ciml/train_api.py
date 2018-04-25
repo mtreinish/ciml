@@ -148,8 +148,10 @@ def train_model(build_name):
         model_config = {'build_name': build_name}
         global estimator
         dataset = estimator
-        gather_results.save_model_config(dataset, model_config)
-        gather_results.save_run_uuids(dataset, runs)
+        global model_dir
+#        gather_results.save_model_config(dataset, model_config,
+#                                         data_path=model_dir)
+        gather_results.save_run_uuids(dataset, runs, data_path=model_dir)
         normalized_length = 5500
         skips = []
         classes = []
@@ -171,7 +173,7 @@ def train_model(build_name):
                 }
 
                 results = gather_results.get_subunit_results_for_run(
-                    run, '1s', session=session)
+                    run, '1s', session=session, data_path=model_dir)
                 print('Acquired run %s' % run.uuid)
                 # For one run_uuid we must only get on example (result)
                 result = results[0]
@@ -206,7 +208,8 @@ def train_model(build_name):
                               '%s' % skips)
                         safe_runs = [
                             run for run in runs if run.uuid not in skips]
-                        gather_results.save_run_uuids(dataset, safe_runs)
+                        gather_results.save_run_uuids(dataset, safe_runs,
+                                                      data_path=model_dir)
                         message = ('The model has been updated to exclude '
                                    'those runs. Please re-run the training '
                                    'step.')
@@ -220,7 +223,8 @@ def train_model(build_name):
                     examples, labels)
                 # We do cache the result to normalize the prediction set.
                 model_config['normalization_params'] = normalization_params
-                gather_results.save_model_config(dataset, model_config)
+                gather_results.save_model_config(dataset, model_config,
+                                                 data_path=model_dir)
                 # Now do the training
                 example_ids = [run.uuid for run in runs]
                 classes = np.array(classes)
@@ -229,7 +233,8 @@ def train_model(build_name):
                                        model_path=model_dir)
             else:
                 result = gather_results.get_subunit_results_for_run(
-                    run, '1s', session=session)[0]
+                    run, '1s', session=session, use_cache=False,
+                    data_path=model_dir)[0]
                 try:
                     features, labels = nn_trainer.normalize_data(result)
                 except TypeError:

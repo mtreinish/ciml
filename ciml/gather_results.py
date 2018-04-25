@@ -55,7 +55,8 @@ def _parse_dstat_file(input_io, sample_interval=None):
     return out
 
 
-def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None):
+def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
+                    data_path=None):
     """Obtains and parses a dstat file to a pandas.DatetimeIndex
 
     Finds a dstat file in the local cache or downloads it from the
@@ -66,8 +67,11 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None):
              'controller/logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt.gz']
-    raw_data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                       'data', '.raw']
+    if not data_path:
+        raw_data_folder = [os.path.dirname(os.path.realpath(__file__)),
+                           os.pardir, 'data', '.raw']
+    else:
+        raw_data_folder = [data_path, 'data', '.raw']
     os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
     raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
     if os.path.isfile(raw_data_file):
@@ -99,10 +103,13 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None):
         return None
 
 
-def _get_result_for_run(run, session, use_cache=True):
+def _get_result_for_run(run, session, use_cache=True, data_path=None):
     # First try to get the data from disk
-    metadata_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                       'data', '.metadata']
+    if not data_path:
+        metadata_folder = [os.path.dirname(os.path.realpath(__file__)),
+                           os.pardir, 'data', '.metadata']
+    else:
+        metadata_folder = [data_path, 'data', '.metadata']
     os.makedirs(os.sep.join(metadata_folder), exist_ok=True)
     result_file = os.sep.join(metadata_folder + [run.uuid + '.json.gz'])
     if use_cache:
@@ -147,18 +154,21 @@ def _get_result_for_run(run, session, use_cache=True):
     return result
 
 
-def _get_data_for_run(run, sample_interval, session, use_cache=True):
+def _get_data_for_run(run, sample_interval, session, use_cache=True,
+                      data_path=None):
     # First ensure we can get dstat data
-    dstat = _get_dstat_file(run.artifacts, run.uuid, sample_interval)
+    dstat = _get_dstat_file(run.artifacts, run.uuid, sample_interval,
+                            data_path=data_path)
     if dstat is None:
         return None
-    result = _get_result_for_run(run, session, use_cache)
+    result = _get_result_for_run(run, session, use_cache, data_path=data_path)
     result['dstat'] = dstat
     return result
 
 
 def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
-                        build_name='tempest-full', use_cache=True):
+                        build_name='tempest-full', use_cache=True,
+                        data_path=None):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -178,7 +188,8 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in db_build_name:
             continue
-        result = _get_data_for_run(run, sample_interval, session, use_cache)
+        result = _get_data_for_run(run, sample_interval, session, use_cache,
+                                   data_path=data_path)
         if result:
             results.append(result)
     session.close()
@@ -186,7 +197,7 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
 
 
 def get_subunit_results_for_run(run, sample_interval, db_uri=None,
-                                use_cache=True, session=None):
+                                use_cache=True, session=None, data_path=None):
     if db_uri:
         # When running from a local set the db_uri is not going to be set
         engine = create_engine(db_uri)
@@ -195,7 +206,7 @@ def get_subunit_results_for_run(run, sample_interval, db_uri=None,
     else:
         session = session
     return [_get_data_for_run(run, sample_interval, session,
-                              use_cache=use_cache)]
+                              use_cache=use_cache, data_path=data_path)]
 
 
 def get_runs_by_name(db_uri, build_name, session=None):
@@ -212,9 +223,12 @@ def get_runs_by_name(db_uri, build_name, session=None):
     return full_out
 
 
-def save_model_config(dataset, model_config):
-    data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                   'data', dataset]
+def save_model_config(dataset, model_config, data_path=None):
+    if not data_path:
+        data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                       'data', dataset]
+    else:
+        data_folder = [data_path, 'data', dataset]
     os.makedirs(os.sep.join(data_folder), exist_ok=True)
     model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
     existing_config = load_model_config(dataset)
@@ -229,9 +243,12 @@ def save_model_config(dataset, model_config):
         local_cache.write(json.dumps(model_config).encode())
 
 
-def load_model_config(dataset):
-    data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                   'data', dataset]
+def load_model_config(dataset, data_path=None):
+    if not data_path:
+        data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
+                       'data', dataset]
+    else:
+        data_folder = [data_path, 'data', dataset]
     model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
     if os.path.isfile(model_config_file):
         try:
@@ -244,7 +261,7 @@ def load_model_config(dataset):
             return None
 
 
-def load_run_uuids(dataset):
+def load_run_uuids(dataset, data_path=None):
     """Return a list of run objects for a specific dataset_name
 
     Read the list of run uuids from file and return a list of run objects
@@ -260,8 +277,13 @@ def load_run_uuids(dataset):
             self.uuid = uuid
             self.artifacts = None
 
-    dataset_runs = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                                os.pardir, 'data', dataset, 'runs.json.gz'])
+    if not data_path:
+        dataset_runs = os.sep.join([
+            os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
+            dataset, 'runs.json.gz'])
+    else:
+        dataset_runs = os.sep.join([data_path, 'data', dataset,
+                                    'runs.json.gz'])
     if os.path.isfile(dataset_runs):
         try:
             with gzip.open(dataset_runs, mode='r') as f:
@@ -272,9 +294,14 @@ def load_run_uuids(dataset):
             return None
 
 
-def save_run_uuids(dataset, runs):
-    dataset_runs = os.sep.join([os.path.dirname(os.path.realpath(__file__)),
-                                os.pardir, 'data', dataset, 'runs.json.gz'])
+def save_run_uuids(dataset, runs, data_path=None):
+    if not data_path:
+        dataset_runs = os.sep.join([
+            os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
+            dataset, 'runs.json.gz'])
+    else:
+        dataset_runs = os.sep.join([data_path, 'data', dataset,
+                                    'runs.json.gz'])
     run_uuids = [run.uuid for run in runs]
     with gzip.open(dataset_runs, mode='wb') as local_cache:
         local_cache.write(json.dumps(run_uuids).encode())
