@@ -14,6 +14,8 @@
 
 import argparse
 from contextlib import contextmanager
+import os
+import threading
 
 import flask
 from flask import abort
@@ -142,38 +144,46 @@ def list_routes():
 
 @app.route('/train/name/<string:build_name>', methods=['POST'])
 def train_model(build_name):
-    with session_scope() as session:
-        runs = gather_results.get_runs_by_name(None, build_name=build_name,
-                                               session=session)
-        model_config = {'build_name': build_name}
-        global estimator
-        dataset = estimator
-        global model_dir
-#        gather_results.save_model_config(dataset, model_config,
-#                                         data_path=model_dir)
-        gather_results.save_run_uuids(dataset, runs, data_path=model_dir)
-        normalized_length = 5500
-        skips = []
-        classes = []
-        labels = []
-        examples = []
-        class_label = 'status'
-        features_regex = None
-        sample_interval = None
-        idx = 0
-        for run in runs:
-            if estimator == 'svm':
-                # Model configuration. We need to cache sample_interval,
-                # features-regex and the normalization parameters for each
-                # feature so we can re-use them during prediction.
-                model_config = {
-                    'sample_interval': sample_interval,
-                    'features_regex': features_regex,
-                    'normalized_length': normalized_length
-                }
 
+    global estimator
+    dataset = estimator
+    global model_dir
+    with session_scope() as session:
+        if not os.path.isfile(os.sep.join([model_dir, 'data', dataset,
+                                           'runs.json.gz'])):
+            runs = gather_results.get_runs_by_name(None,
+                                                   build_name=build_name,
+                                                   session=session)
+            model_config = {'build_name': build_name}
+            gather_results.save_model_config(dataset, model_config,
+                                             data_path=model_dir)
+            gather_results.save_run_uuids(dataset, runs,
+                                          data_path=model_dir)
+        else:
+            runs = gather_results.load_run_uuids(dataset,
+                                                 data_path=model_dir)
+        normalized_length = 5500
+        if estimator == 'svm':
+            skips = []
+            classes = []
+            labels = []
+            examples = []
+            class_label = 'status'
+            features_regex = None
+            sample_interval = None
+            idx = 0
+            # Model configuration. We need to cache sample_interval,
+            # features-regex and the normalization parameters for each
+            # feature so we can re-use them during prediction.
+            model_config = {
+                'sample_interval': sample_interval,
+                'features_regex': features_regex,
+                'normalized_length': normalized_length
+            }
+            for run in runs:
                 results = gather_results.get_subunit_results_for_run(
-                    run, '1s', session=session, data_path=model_dir)
+                    run, '1s', session=None, data_path=model_dir,
+                    use_cache=True)
                 print('Acquired run %s' % run.uuid)
                 # For one run_uuid we must only get on example (result)
                 result = results[0]
@@ -186,12 +196,15 @@ def train_model(build_name):
                     examples = np.ndarray(
                         shape=(
                             len(runs),
-                            len(result['dstat'].columns) * normalized_length))
-                    model_config['num_columns'] = len(result['dstat'].columns)
+                            (len(result['dstat'].columns)
+                             * normalized_length)))
+                    model_config['num_columns'] = len(
+                        result['dstat'].columns)
                     model_config['num_features'] = (len(
                         result['dstat'].columns) * normalized_length)
                     # Normalize data
-                    example = fixed_lenght_example(result, normalized_length)
+                    example = fixed_lenght_example(result,
+                                                   normalized_length)
                     # Normalize status
                     status = get_class(result, class_label)
                     vector, new_labels = unroll_example(
@@ -203,17 +216,19 @@ def train_model(build_name):
                     # Examples is an np ndarrays
                     examples[idx] = vector.values
                     classes.append(status)
-                    if len(skips) > 0:
-                        print('Unable to train model because of missing runs '
-                              '%s' % skips)
-                        safe_runs = [
-                            run for run in runs if run.uuid not in skips]
-                        gather_results.save_run_uuids(dataset, safe_runs,
-                                                      data_path=model_dir)
-                        message = ('The model has been updated to exclude '
-                                   'those runs. Please re-run the training '
-                                   'step.')
-                        abort(make_response(message, 400))
+            if len(skips) > 0:
+                    print('Unable to train model because of missing '
+                          'runs %s' % skips)
+                    safe_runs = [
+                        run for run in runs if run.uuid not in skips]
+                    gather_results.save_run_uuids(dataset, safe_runs,
+                                                  data_path=model_dir)
+                    message = ('The model has been updated to exclude '
+                               'those runs. Please re-run the training'
+                               ' step.')
+                    abort(make_response(message, 400))
+
+            def run_training():
                 # Perform dataset-wise normalization
                 # NOTE(andreaf) When we train the model we ignore any saved
                 # normalization
@@ -227,23 +242,31 @@ def train_model(build_name):
                                                  data_path=model_dir)
                 # Now do the training
                 example_ids = [run.uuid for run in runs]
-                classes = np.array(classes)
+                outclasses = np.array(classes)
                 svm_trainer.SVMTrainer(n_examples, example_ids, labels,
-                                       classes, dataset_name=dataset,
+                                       outclasses, dataset_name=dataset,
                                        model_path=model_dir)
-            else:
-                result = gather_results.get_subunit_results_for_run(
-                    run, '1s', session=session, use_cache=False,
-                    data_path=model_dir)[0]
-                try:
-                    features, labels = nn_trainer.normalize_data(result)
-                except TypeError:
-                    print('Unable to normalize data in run %s, '
-                          'skipping' % run.uuid)
-                    continue
-                nn_trainer.train_model(features, labels,
-                                       dataset_name=dataset,
-                                       model_path=model_dir)
+            thread = threading.Thread(target=run_training)
+            thread.start()
+            return "training started", 202
+        else:
+            def run_nn_training():
+                for run in runs:
+                    result = gather_results.get_subunit_results_for_run(
+                        run, '1s', session=session, use_cache=False,
+                        data_path=model_dir)[0]
+                    try:
+                        features, labels = nn_trainer.normalize_data(result)
+                    except TypeError:
+                        print('Unable to normalize data in run %s, '
+                              'skipping' % run.uuid)
+                        continue
+                    nn_trainer.train_model(features, labels,
+                                           dataset_name=dataset,
+                                           model_path=model_dir)
+            thread = threading.Thread(target=run_nn_training)
+            thread.start()
+            return "training started", 202
 
 
 def main():
