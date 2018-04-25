@@ -12,3 +12,4 @@ pandas>=0.20.1
 tensorflow>=1.6.0 # Apache-2.0
 PyMySQL>=0.8.0
 click
+flask>=0.12.2

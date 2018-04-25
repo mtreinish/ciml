@@ -139,12 +139,16 @@ def time_series_model(features, labels, mode, params):
     return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 
-def train_model(data, results, train_steps=1000, dataset_name='dataset'):
+def train_model(data, results, train_steps=1000, dataset_name='dataset',
+                model_path=None):
     my_feature_columns = [
         tf.contrib.layers.real_valued_column(x) for x in data.keys()]
-    model_data_dir = os.sep.join([
-        os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
-        dataset_name, 'model'])
+    if not model_path:
+        model_data_dir = os.sep.join([
+            os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
+            dataset_name, 'model'])
+    else:
+        model_data_dir = os.sep.join([model_path, dataset_name, 'model'])
     data = data.reset_index()
     data = data.drop(columns=['index'])
 

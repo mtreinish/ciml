@@ -23,7 +23,8 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 class SVMTrainer(object):
     def __init__(self, examples, example_ids, labels, classes,
-                 dataset_name='dataset', force_gpu=False):
+                 dataset_name='dataset', force_gpu=False,
+                 model_path=None):
         # Define feature names including the original CSV column name
         self.feature_columns = [
             tf.contrib.layers.real_valued_column(x) for x in labels]
@@ -31,9 +32,13 @@ class SVMTrainer(object):
         self.examples = examples
         self.classes = classes
         self.force_gpu = force_gpu
-        model_data_folder = os.sep.join([
-            os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
-            dataset_name, 'model'])
+        if not model_path:
+            model_data_folder = os.sep.join([
+                os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
+                dataset_name, 'model'])
+        else:
+            model_data_folder = os.sep.join([model_path, dataset_name,
+                                             model_path])
         os.makedirs(model_data_folder, exist_ok=True)
         self.estimator = tf.contrib.learn.SVM(
             feature_columns=self.feature_columns,
