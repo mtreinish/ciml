@@ -108,3 +108,58 @@ spec:
   selector:
     app: {{ template "ciml.name" . }}-mqtt
     release: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "ciml.fullname" . }}-api
+  labels:
+    app: {{ template "ciml.name" . }}-api
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: {{ template "ciml.name" . }}-api
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "ciml.name" . }}-api
+        release: {{ .Release.Name }}
+    spec:
+      volumes:
+        - name: {{ template "ciml.fullname" . }}-model-volume
+          persistentVolumeClaim:
+            claimName: {{ template "ciml.fullname" . }}-model-nfs
+      containers:
+        - name: {{ template "ciml.fullname" . }}-api
+          image: "{{ .Values.image.repository }}/{{.Values.api.image.name }}:{{.Values.api.image.version }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: {{ template "ciml.fullname" . }}-model-volume
+              mountPath: "/shared"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "ciml.fullname" . }}-api
+  labels:
+    app: {{ template "ciml.name" . }}-api
+    chart: {{ template "ciml.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+    protocol: TCP
+  selector:
+    app: {{ template "ciml.name" . }}-api
+    release: {{ .Release.Name }}

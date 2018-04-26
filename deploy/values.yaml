@@ -10,7 +10,7 @@ mqtt:
     name: mqtt
     version: 1
   storage:
-    size: 1Gi
+    size: 10Gi
     class: "ibmc-file-silver"
 
 base:
@@ -34,6 +34,11 @@ mqttWait:
 predict:
   image:
     name: mqtt-predict
+    version: 1
+
+api:
+  image:
+    name: ciml-api
     version: 1
 
 image:

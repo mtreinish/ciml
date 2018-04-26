@@ -37,8 +37,8 @@ class SVMTrainer(object):
                 os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
                 dataset_name, 'model'])
         else:
-            model_data_folder = os.sep.join([model_path, dataset_name,
-                                             model_path])
+            model_data_folder = os.sep.join([model_path, 'data', dataset_name,
+                                             'model'])
         os.makedirs(model_data_folder, exist_ok=True)
         self.estimator = tf.contrib.learn.SVM(
             feature_columns=self.feature_columns,

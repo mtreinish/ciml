@@ -252,6 +252,7 @@ def train_model(build_name):
         else:
             def run_nn_training():
                 for run in runs:
+                    uuid = run.uuid
                     result = gather_results.get_subunit_results_for_run(
                         run, '1s', session=session, use_cache=False,
                         data_path=model_dir)[0]
@@ -259,11 +260,12 @@ def train_model(build_name):
                         features, labels = nn_trainer.normalize_data(result)
                     except TypeError:
                         print('Unable to normalize data in run %s, '
-                              'skipping' % run.uuid)
+                              'skipping' % uuid)
                         continue
                     nn_trainer.train_model(features, labels,
                                            dataset_name=dataset,
                                            model_path=model_dir)
+                print('done')
             thread = threading.Thread(target=run_nn_training)
             thread.start()
             return "training started", 202
