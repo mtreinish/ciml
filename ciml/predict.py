@@ -158,8 +158,9 @@ def db_batch_predict(db_uri, dataset, limit, gpu, debug):
               help='dstat (down)sampling interval')
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--debug/--no-debug', default=False)
+@click.option('--model-dir', default=None, help='Base path to model dir')
 def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
-                 build_name, debug):
+                 build_name, debug, model_dir):
     event_queue = queue.Queue()
     if debug:
         print('Starting MQTT listener')
@@ -173,7 +174,8 @@ def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
         if debug:
             print('Received event with build uuid %s' % event['build_uuid'])
         results = gather_results.get_subunit_results(
-            event['build_uuid'], dataset, sample_interval, db_uri, build_name)
+            event['build_uuid'], dataset, sample_interval, db_uri, build_name,
+            data_path=model_dir, use_cache=False)
         if results:
             print('Obtained dstat file for %s' % event['build_uuid'])
         else:
@@ -183,5 +185,5 @@ def mqtt_predict(db_uri, mqtt_hostname, topic, dataset, sample_interval,
             vector, status, labels = trainer.normalize_example(res)
             model = svm_trainer.SVMTrainer(
                 vector, [event['build_uuid']] * len(results), labels, [status],
-                dataset_name=dataset)
+                dataset_name=dataset, model_path=model_dir)
             model.predict()
