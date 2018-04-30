@@ -14,13 +14,15 @@ RUN rm -f /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
+# Remove default page
+RUN rm -f /etc/nginx/sites-enabled/*
+
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-#COPY ciml-api.conf /etc/nginx/sites-available/ciml-api.conf
-COPY ciml-api.conf /etc/nginx/conf.d/ngnix.conf
+COPY ciml-api.conf /etc/nginx/sites-available/ciml-api.conf
 COPY ciml-uwsgi-api.ini /etc/ciml-uwsgi-api.ini
 COPY ciml-train.conf /etc/ciml-train.conf
 
-#RUN ln -s /etc/nginx/sites-available/ciml-api.conf /etc/nginx/sites-enabled/ciml-api.conf
+RUN ln -s /etc/nginx/sites-available/ciml-api.conf /etc/nginx/sites-enabled/ciml-api.conf
 RUN mkdir -p /var/run/uwsgi/
 
 ENV MPLBACKEND=agg
