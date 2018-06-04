@@ -8,7 +8,7 @@ results.
 Getting Started
 ---------------
 
-To us ciml, you have to collect a dataset and train the model. Once that's done
+To use ciml, you have to collect a dataset and train the model. Once that's done
 you can perform predictions on new data using the MQTT triggered pipeline.
 
 To collect a dataset, use ciml-build-dataset:
