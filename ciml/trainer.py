@@ -185,41 +185,19 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
 
 
 @click.command()
-@click.option('--estimator', default='tf.estimator.DNNClassifier',
-              help='Type of model to be used (not implemented yet).')
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--limit', default=0, help="Maximum number of entries")
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
-@click.option('--evaluate', default=False, help='Evaluate')
-def db_trainer(estimator, dataset, build_name, limit, db_uri, evaluate):
+def dataset_build(dataset, build_name, limit, db_uri):
     runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
     model_config = {'build_name': build_name}
     gather_results.save_model_config(dataset, model_config)
     if limit > 0:
         runs = runs[:limit]
     gather_results.save_run_uuids(dataset, runs)
-    for run in runs:
-        if estimator == 'tf.estimator.DNNClassifier':
-            gather_results.get_subunit_results_for_run(run, '1s', db_uri,
-                                                       use_cache=True)
-            print('Acquired run %s' % run.uuid)
-        else:
-            result = gather_results.get_subunit_results_for_run(
-                run, '1s', db_uri)[0]
-            print('Acquired run %s' % run.uuid)
-            try:
-                features, labels = nn_trainer.normalize_data(result)
-            except TypeError:
-                print('Unable to normalize data in run %s, '
-                      'skipping' % run.uuid)
-                continue
-            if not evaluate:
-                nn_trainer.train_model(features, labels, dataset_name=dataset)
-            else:
-                nn_trainer.evaluate_model(features, labels,
-                                          dataset_name=dataset)
+    gather_results.gather_and_cache_results_for_runs(runs, '1s', db_uri)
 
 
 @click.command()

@@ -18,6 +18,7 @@ import io
 import itertools
 import json
 import os
+import sys
 
 import pandas
 import requests
@@ -77,7 +78,12 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
     if os.path.isfile(raw_data_file):
         try:
             with gzip.open(raw_data_file, mode='r') as f:
-                return _parse_dstat_file(f, sample_interval)
+                try:
+                    return _parse_dstat_file(f, sample_interval)
+                except pandas.errors.ParserError:
+                    print('Currupted data in %s, deleting.' % raw_data_file,
+                          file=sys.stderr)
+                    os.remove(raw_data_file)
         except IOError as ioe:
             # Something went wrong opening the file, so we won't load this run.
             print('Run %s found in the local dataset, however: %s',
@@ -98,7 +104,12 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
             local_cache.write(resp.text.encode())
         # And return the parse dstat
         f = io.StringIO(resp.text)
-        return _parse_dstat_file(f, sample_interval)
+        try:
+            return _parse_dstat_file(f, sample_interval)
+        except pandas.errors.ParserError:
+            print('Failed parsing dstat data in %s' % artifact_link,
+                  file=sys.stderr)
+            return None
     else:
         return None
 
@@ -208,6 +219,32 @@ def get_subunit_results_for_run(run, sample_interval, db_uri=None,
     return [_get_data_for_run(run, sample_interval, session,
                               use_cache=use_cache, data_path=data_path)]
 
+def gather_and_cache_results_for_runs(runs, sample_interval, db_uri=None,
+                                      session=None, data_path=None):
+    # Download and cache dstat and metadata for a list of runs
+    # This allows re-using a session
+    no_data_runs = load_run_uuids(".unavailable") or []
+    if db_uri:
+        # When running from a local set the db_uri is not going to be set
+        engine = create_engine(db_uri)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+    else:
+        session = session
+    for count, run in enumerate(runs):
+        if count % 100 == 0:
+            # Every 100 runs save to disk so we can restore interrupted jobs.
+            save_run_uuids(".unavailable", no_data_runs)
+        if run in no_data_runs:
+            continue
+        result = _get_data_for_run(run, sample_interval, session,
+                                   use_cache=True, data_path=data_path)
+        if result:
+            print('Cached run %s' % run.uuid)
+        else:
+            no_data_runs.append(run)
+            print('No data available for run %s' % run.uuid)
+    save_run_uuids(".unavailable", no_data_runs)
 
 def get_runs_by_name(db_uri, build_name, session=None):
     if not session:
