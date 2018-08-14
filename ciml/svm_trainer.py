@@ -22,15 +22,14 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 
 class SVMTrainer(object):
-    def __init__(self, examples, example_ids, labels, classes,
+    def __init__(self, labels, training_data, eval_data,
                  dataset_name='dataset', force_gpu=False,
                  model_path=None):
         # Define feature names including the original CSV column name
         self.feature_columns = [
             tf.contrib.layers.real_valued_column(x) for x in labels]
-        self.example_ids = np.array(example_ids)
-        self.examples = examples
-        self.classes = classes
+        self.training_data = training_data
+        self.eval_data = eval_data
         self.force_gpu = force_gpu
         if not model_path:
             model_data_folder = os.sep.join([
@@ -48,42 +47,28 @@ class SVMTrainer(object):
             feature_columns=self.feature_columns,
             example_id_column='example_id',
             model_dir=model_data_folder,
-            feature_engineering_fn=self.feature_engineering_fn,
             config=my_checkpointing_config)
 
-        # Separate training set and evaluation set by building randomised lists
-        # of indexes that can be used for examples, example_ids and classes
-        self.all_indexes = range(len(self.example_ids))
-        self.training_idx = pd.Series(self.all_indexes).sample(
-            len(self.example_ids) // 2).values
-        self.evaluate_idx = list(
-            set(self.all_indexes) - set(self.training_idx))
-
-    def input_fn(self, idx_filter, return_classes=True):
+    def input_fn(self, examples, example_ids, classes, return_classes=True):
         num_features = len(self.feature_columns)
         # Dict comprehension to build a dict of features
         # I suppose numpy might be able to do this more efficiently
         _features = {
             self.feature_columns[n].column_name:
-                tf.constant(self.examples[idx_filter, n])
+                tf.constant(examples)
             for n in range(num_features)}
-        _features['example_id'] = tf.constant(self.example_ids[idx_filter])
+        _features['example_id'] = tf.constant(example_ids)
         print("Done preparing input data")
         if return_classes:
-            return _features, tf.constant(self.classes[idx_filter])
+            return _features, tf.constant(classes)
         else:
             return _features
 
     def training_input_fn(self):
-        return self.input_fn(self.training_idx)
+        return self.input_fn(**self.training_data)
 
     def evaluate_input_fn(self):
-        return self.input_fn(self.evaluate_idx)
-
-    def feature_engineering_fn(self, features, labels):
-        # Further data normalization may happen here
-        print("Built engineered data")
-        return features, labels
+        return self.input_fn(**self.eval_data)
 
     def train(self, steps=30):
         if self.force_gpu:
@@ -99,8 +84,7 @@ class SVMTrainer(object):
         print('Training loss %r' % train_loss)
 
     def predict_fn(self):
-        return self.input_fn(range(len(self.example_ids)),
-                             return_classes=False)
+        return self.input_fn(return_classes=False, **self.training_data)
 
     def predict(self):
         prediction = list(self.estimator.predict(input_fn=self.predict_fn))

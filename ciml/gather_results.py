@@ -20,12 +20,21 @@ import itertools
 import json
 import os
 import sys
+import warnings
+warnings.filterwarnings("ignore")
 
-import pandas
+
+import click
+import numpy as np
+import pandas as pd
 import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from subunit2sql.db import api
+
+
+default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
+                  'subunit2sql')
 
 now = datetime.datetime.utcnow()
 
@@ -49,9 +58,9 @@ def _parse_dstat_file(input_io, sample_interval=None):
     - s is the number of samples (over time) after resampling
     - d is the number of dstat columns available
     """
-    out = pandas.read_csv(input_io, skiprows=6).set_index('time')
+    out = pd.read_csv(input_io, skiprows=6).set_index('time')
     out.index = [_parse_dstat_date(x) for x in out.index]
-    out.index = pandas.DatetimeIndex(out.index)
+    out.index = pd.DatetimeIndex(out.index)
     if sample_interval:
         out = out.resample(sample_interval).mean()
     return out
@@ -59,11 +68,11 @@ def _parse_dstat_file(input_io, sample_interval=None):
 
 def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                     use_http=True, data_path=None):
-    """Obtains and parses a dstat file to a pandas.DatetimeIndex
+    """Obtains and parses a dstat file to a pd.DatetimeIndex
 
     Finds a dstat file in the local cache or downloads it from the
     artifacts link, then parses it and resamples it into a
-    pandas.DatetimeIndex.
+    pd.DatetimeIndex.
     """
     paths = ['controller/logs/dstat-csv_log.txt.gz',
              'controller/logs/dstat-csv_log.txt',
@@ -84,7 +93,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                         # When using remote let me know if loading from cache
                         print("%s: dstat found in cache" % run_uuid)
                     return _parse_dstat_file(f, sample_interval)
-                except pandas.errors.ParserError:
+                except pd.errors.ParserError:
                     print('Currupted data in %s, deleting.' % raw_data_file,
                           file=sys.stderr)
                     os.remove(raw_data_file)
@@ -115,7 +124,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         f = io.StringIO(resp.text)
         try:
             return _parse_dstat_file(f, sample_interval)
-        except pandas.errors.ParserError:
+        except pd.errors.ParserError:
             print('Failed parsing dstat data in %s' % artifact_link,
                   file=sys.stderr)
             return None
@@ -252,7 +261,7 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
     # Download and cache dstat and metadata for a list of runs
     # This allows re-using a session
     no_data_runs = set(
-        load_run_uuids(".unavailable", data_path=data_path) or [])
+        load_run_uuids(".raw", name="unavailable", data_path=data_path) or [])
     data_runs = set([])
     if db_uri:
         # When running from a local set the db_uri is not going to be set
@@ -265,7 +274,7 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
         if count % 100 == 0:
             # Every 100 runs save to disk so we can restore interrupted jobs.
             save_run_uuids(".unavailable", no_data_runs, data_path=data_path)
-        if len(data_runs) == limit:
+        if len(data_runs) == limit and limit != 0:
             return data_runs
         if run.uuid in no_data_runs:
             print("%s: ignored by configuration" % run.uuid)
@@ -278,8 +287,10 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
         else:
             no_data_runs.add(run.uuid)
             print('%d[%s]: No data' % (count, run.uuid))
-    save_run_uuids(".unavailable", no_data_runs, data_path=data_path)
+    save_run_uuids(".raw", no_data_runs, name="unavailable",
+                   data_path=data_path)
     return data_runs
+
 
 def get_runs_by_name(db_uri, build_name, session=None):
     if not session:
@@ -302,14 +313,7 @@ def save_model_config(dataset, model_config, data_path=None):
     else:
         data_folder = [data_path, 'data', dataset]
     os.makedirs(os.sep.join(data_folder), exist_ok=True)
-    model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
-    existing_config = load_model_config(dataset)
-    # TODO(andreaf) For now we just override things. This would actually be a
-    # good place to fail or at least warn users that the model is being
-    # re-trained with conflicting parameters.
-    if existing_config:
-        existing_config.update(model_config)
-        model_config = existing_config
+    model_config_file = os.sep.join(data_folder + ['model_config.json.gz'])
 
     with gzip.open(model_config_file, mode='wb') as local_cache:
         local_cache.write(json.dumps(model_config).encode())
@@ -321,7 +325,7 @@ def load_model_config(dataset, data_path=None):
                        'data', dataset]
     else:
         data_folder = [data_path, 'data', dataset]
-    model_config_file = os.sep.join(data_folder + [dataset + '.json.gz'])
+    model_config_file = os.sep.join(data_folder + ['model_config.json.gz'])
     if os.path.isfile(model_config_file):
         try:
             with gzip.open(model_config_file, mode='r') as f:
@@ -333,19 +337,18 @@ def load_model_config(dataset, data_path=None):
             return None
 
 
-def load_run_uuids(dataset, data_path=None):
+def load_run_uuids(dataset, name='runs', data_path=None):
     """Return a list of run uuids for a specific dataset_name
 
     Read the list of run uuids from file and return a list of run uuids.
     """
-
     if not data_path:
         dataset_runs = os.sep.join([
             os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
-            dataset, 'runs.json.gz'])
+            dataset, name + '.json.gz'])
     else:
         dataset_runs = os.sep.join([data_path, 'data', dataset,
-                                    'runs.json.gz'])
+                                    name + '.json.gz'])
     if os.path.isfile(dataset_runs):
         try:
             with gzip.open(dataset_runs, mode='r') as f:
@@ -356,7 +359,7 @@ def load_run_uuids(dataset, data_path=None):
             return None
 
 
-def save_run_uuids(dataset, run_uuids, data_path=None):
+def save_run_uuids(dataset, run_uuids, name='runs', data_path=None):
     if not data_path:
         dataset_folder = [os.path.dirname(os.path.realpath(__file__)),
                           os.pardir]
@@ -364,7 +367,40 @@ def save_run_uuids(dataset, run_uuids, data_path=None):
         dataset_folder = [data_path]
     dataset_folder.extend(['data', dataset])
     os.makedirs(os.sep.join(dataset_folder), exist_ok=True)
-    dataset_folder.append('runs.json.gz')
+    dataset_folder.append(name + '.json.gz')
     dataset_runs = os.sep.join(dataset_folder)
     with gzip.open(dataset_runs, mode='wb') as local_cache:
         local_cache.write(json.dumps(list(run_uuids)).encode())
+
+
+def load_dataset(dataset, name, data_path=None):
+    if not data_path:
+        dataset_file = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
+    else:
+        dataset_file = [data_path]
+    dataset_file.extend(['data', dataset, name + '.npz'])
+    with np.load(os.sep.join(dataset_file)) as numpy_dataset:
+        return {f: numpy_dataset[f] for f in numpy_dataset.files}
+
+
+def save_dataset(dataset, name, data_path=None, **kwargs):
+    if not data_path:
+        dataset_file = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
+    else:
+        dataset_file = [data_path]
+    dataset_file.extend(['data', dataset, name])
+    np.savez_compressed(os.sep.join(dataset_file), **kwargs)
+
+
+@click.command()
+@click.option('--build-name', default="tempest-full", help="Build name.")
+@click.option('--db-uri', default=default_db_uri, help="DB URI")
+@click.option('--limit', default=0, help="Maximum number of entries")
+def cache_data(build_name, db_uri):
+    runs = get_runs_by_name(db_uri, build_name=build_name)
+    print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
+    limit_runs = gather_and_cache_results_for_runs(
+        runs, limit, '1s', db_uri)
+    save_run_uuids('.raw', limit_runs, name=build_name)
+    print("Stored %d run IDs in .raw for build name %s" % (
+        len(limit_runs), build_name))
