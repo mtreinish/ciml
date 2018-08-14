@@ -192,12 +192,14 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
 def dataset_build(dataset, build_name, limit, db_uri):
     runs = gather_results.get_runs_by_name(db_uri, build_name=build_name)
+    print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
     model_config = {'build_name': build_name}
     gather_results.save_model_config(dataset, model_config)
-    if limit > 0:
-        runs = runs[:limit]
-    gather_results.save_run_uuids(dataset, runs)
-    gather_results.gather_and_cache_results_for_runs(runs, '1s', db_uri)
+    limit_runs = gather_results.gather_and_cache_results_for_runs(
+        runs, limit, '1s', db_uri)
+    gather_results.save_run_uuids(dataset, limit_runs)
+    print("Stored %d run IDs in the model %s config" % (len(limit_runs),
+                                                        dataset))
 
 
 @click.command()
@@ -313,7 +315,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         idx += 1
     if len(skips) > 0:
         print('Unable to train model because of missing runs %s' % skips)
-        safe_runs = [run for run in runs if run.uuid not in skips]
+        safe_runs = [run.uuid for run in runs if run.uuid not in skips]
         gather_results.save_run_uuids(dataset, safe_runs)
         print('The model has been updated to exclude those runs.')
         print('Please re-run the training step.')

@@ -79,6 +79,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         try:
             with gzip.open(raw_data_file, mode='r') as f:
                 try:
+                    print("%s: dstat found in cache" % run_uuid)
                     return _parse_dstat_file(f, sample_interval)
                 except pandas.errors.ParserError:
                     print('Currupted data in %s, deleting.' % raw_data_file,
@@ -102,6 +103,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         # Cache the file locally
         with gzip.open(raw_data_file, mode='wb') as local_cache:
             local_cache.write(resp.text.encode())
+        print("%s: dstat cached from URL" % run_uuid)
         # And return the parse dstat
         f = io.StringIO(resp.text)
         try:
@@ -111,6 +113,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                   file=sys.stderr)
             return None
     else:
+        print("%s: dstat miss from URL" % run_uuid)
         return None
 
 
@@ -126,6 +129,7 @@ def _get_result_for_run(run, session, use_cache=True, data_path=None):
     if use_cache:
         if os.path.isfile(result_file):
             try:
+                print("%s: metadata found in cache" % run.uuid)
                 with gzip.open(result_file, mode='r') as f:
                     return json.loads(f.read())
             except IOError as ioe:
@@ -161,6 +165,7 @@ def _get_result_for_run(run, session, use_cache=True, data_path=None):
     # Cache the json file, without tests
     with gzip.open(result_file, mode='wb') as local_cache:
         local_cache.write(json.dumps(result).encode())
+    print("%s: metada cached from URL")
     result['tests'] = tests
     return result
 
@@ -219,11 +224,13 @@ def get_subunit_results_for_run(run, sample_interval, db_uri=None,
     return [_get_data_for_run(run, sample_interval, session,
                               use_cache=use_cache, data_path=data_path)]
 
-def gather_and_cache_results_for_runs(runs, sample_interval, db_uri=None,
+def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
                                       session=None, data_path=None):
     # Download and cache dstat and metadata for a list of runs
     # This allows re-using a session
-    no_data_runs = load_run_uuids(".unavailable") or []
+    no_data_runs = set(
+        load_run_uuids(".unavailable", data_path=data_path) or [])
+    data_runs = set([])
     if db_uri:
         # When running from a local set the db_uri is not going to be set
         engine = create_engine(db_uri)
@@ -234,17 +241,22 @@ def gather_and_cache_results_for_runs(runs, sample_interval, db_uri=None,
     for count, run in enumerate(runs):
         if count % 100 == 0:
             # Every 100 runs save to disk so we can restore interrupted jobs.
-            save_run_uuids(".unavailable", no_data_runs)
-        if run in no_data_runs:
+            save_run_uuids(".unavailable", no_data_runs, data_path=data_path)
+        if len(data_runs) == limit:
+            return data_runs
+        if run.uuid in no_data_runs:
+            print("%s: ignored by configuration" % run.uuid)
             continue
         result = _get_data_for_run(run, sample_interval, session,
                                    use_cache=True, data_path=data_path)
         if result:
-            print('Cached run %s' % run.uuid)
+            data_runs.add(run.uuid)
+            print('%d[%s]: Data found' % (count, run.uuid))
         else:
-            no_data_runs.append(run)
-            print('No data available for run %s' % run.uuid)
-    save_run_uuids(".unavailable", no_data_runs)
+            no_data_runs.add(run.uuid)
+            print('%d[%s]: No data' % (count, run.uuid))
+    save_run_uuids(".unavailable", no_data_runs, data_path=data_path)
+    return data_runs
 
 def get_runs_by_name(db_uri, build_name, session=None):
     if not session:
@@ -299,20 +311,10 @@ def load_model_config(dataset, data_path=None):
 
 
 def load_run_uuids(dataset, data_path=None):
-    """Return a list of run objects for a specific dataset_name
+    """Return a list of run uuids for a specific dataset_name
 
-    Read the list of run uuids from file and return a list of run objects
-    compatible with the run returned by the DB api. The only valid content
-    in the run objects is the UUID.
+    Read the list of run uuids from file and return a list of run uuids.
     """
-    # TODO(andreaf) We can cache run data in the .metadata folder as well and
-    # build full run objects here. Alternatively we could build dictionaries
-    # and change gather_results functions to work on the dict as opposed to the
-    # object.
-    class _run(object):
-        def __init__(self, uuid):
-            self.uuid = uuid
-            self.artifacts = None
 
     if not data_path:
         dataset_runs = os.sep.join([
@@ -324,21 +326,22 @@ def load_run_uuids(dataset, data_path=None):
     if os.path.isfile(dataset_runs):
         try:
             with gzip.open(dataset_runs, mode='r') as f:
-                return [_run(run_uuid) for run_uuid in json.loads(f.read())]
+                return json.load(f)
         except IOError as ioe:
             # Something went wrong opening the file, so we won't load this run.
             print('Run found in the local dataset, however: %s', ioe)
             return None
 
 
-def save_run_uuids(dataset, runs, data_path=None):
+def save_run_uuids(dataset, run_uuids, data_path=None):
     if not data_path:
-        dataset_runs = os.sep.join([
-            os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
-            dataset, 'runs.json.gz'])
+        dataset_folder = [os.path.dirname(os.path.realpath(__file__)),
+                          os.pardir]
     else:
-        dataset_runs = os.sep.join([data_path, 'data', dataset,
-                                    'runs.json.gz'])
-    run_uuids = [run.uuid for run in runs]
+        dataset_folder = [data_path]
+    dataset_folder.extend(['data', dataset])
+    os.makedirs(os.sep.join(dataset_folder), exist_ok=True)
+    dataset_folder.append('runs.json.gz')
+    dataset_runs = os.sep.join(dataset_folder)
     with gzip.open(dataset_runs, mode='wb') as local_cache:
-        local_cache.write(json.dumps(run_uuids).encode())
+        local_cache.write(json.dumps(list(run_uuids)).encode())
