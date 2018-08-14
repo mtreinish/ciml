@@ -59,8 +59,8 @@ def fixed_lenght_example(result, normalized_length=5500):
     return example
 
 
-def unroll_example(example, normalized_length=5500, labels=None):
-    """Unroll one example and build labels for the unrolled example.
+def unroll_example(example, labels, normalized_length=5500):
+    """Unroll one example
 
     Unroll one example with shape (L, d) to a pd.Series with shape (L * d,)
     Labels for the input example are an array with shape (d, ), e.g.:
@@ -68,20 +68,11 @@ def unroll_example(example, normalized_length=5500, labels=None):
     Labels for the output example are an array with shape (L * d, ), e.g.:
         ['usr1', ... , 'usrL', ... , 'clo1', ... , 'cloN']
 
-    Labels are only calculated if not input labels are provide, so we can
-    calculate them only once. Labels are a plain python list.
-
     f = L * d is the number of features for the model.
     """
     # Unroll the examples
     np_vector = example.values.flatten('F')
-    if not labels:
-        # We need to calculate labels only once (feature names)
-        labels = [label + str(idx) for label, idx in itertools.product(
-            example.columns, range(normalized_length))]
-
-    vector = pd.Series(np_vector)
-    return vector, labels
+    return pd.Series(np_vector)
 
 
 def get_class(result, class_label='status'):
@@ -115,6 +106,30 @@ def normalize_example(result, normalized_length=5500, labels=None,
     return vector, status, labels
 
 
+def filter_example(result, features_regex):
+    """Filters the dstat data by features_regex"""
+    # Apply the dstat feature filter
+    dstat_data = result['dstat']
+    col_regex = re.compile(features_regex)
+    result['dstat'] = dstat_data[list(filter(
+        col_regex.search, dstat_data.columns))]
+    return result
+
+
+def unroll_labels(filtered_result, normalized_length=5500):
+    """Build labels for the unrolled example from the list of runs"""
+    # Get one run
+    return [label + str(idx) for label, idx in itertools.product(
+        filtered_result['dstat'].columns, range(normalized_length))]
+
+
+def examples_ndarray(num_examples, filtered_result, normalized_length):
+    # Setup the numpy matrix and sizes (this is done once)
+    return np.ndarray(
+        shape=(num_examples,
+               len(filtered_result['dstat'].columns) * normalized_length))
+
+
 def normalize_dataset(examples, labels, params=None):
     """Normalize features in a dataset
 
@@ -145,6 +160,140 @@ def normalize_dataset(examples, labels, params=None):
     return _features.transpose(), params
 
 
+def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
+    """Returns the normalized lenght for a downsampled example
+
+    Returns the normalized example lenght based on the normalized lenght for
+    a full sample and the sample interval.
+    """
+    rng = pd.date_range('1/1/2012', periods=normalized_length, freq='S')
+    ts = pd.Series(np.ones(len(rng)), index=rng)
+    ts = ts.resample(sample_interval).sum()
+    return ts.shape[0]
+
+
+def prepare_dataset(dataset, features_regex, sample_interval='1s',
+                    class_label='status', visualize=False):
+    """Takes a dataset and filters and does the magic
+
+    Loads the run ids from the dataset configuration.
+    Loads the data (dsv + meta) for every run from cache.
+    Builds the unrolled exaples as a numpy ndarray.
+    Builds the classes as a numpy array.
+    Saves the data setup to the dataset config.
+    Does some visualization (if enabled).
+    """
+    # Normalized lenght before resampling
+    normalized_length = 5500
+    if sample_interval:
+        # Calculate the desired normalized lenght after resample
+        normalized_length = get_downsampled_example_lenght(
+            sample_interval, normalized_length)
+
+    if visualize:
+        data_plots_folder = [os.path.dirname(
+            os.path.realpath(__file__)), os.pardir, 'data', dataset, 'plots']
+        os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
+
+    # Load the list of runs and base labels
+    runs = gather_results.load_run_uuids(dataset)
+    sample_result = gather_results.get_subunit_results_for_run(
+        runs[0], sample_interval)
+    filtered_sample_result = filter_example(sample_result, features_regex)
+
+    # run_uuids are the example_ids
+    sizes = []
+    # The data for each example.
+    examples = examples_ndarray(len(runs), filtered_sample_result,
+                                normalized_length)
+    labels = unroll_labels(filtered_sample_result, normalized_length)
+
+    # Model configuration. We need to cache sample_interval, features-regex and
+    # the normalization parameters for each feature so we can re-use them
+    # during prediction.
+    model_config = {
+        'sample_interval': sample_interval,
+        'features_regex': features_regex,
+        'normalized_length': normalized_length,
+        'labels': labels,
+        'num_columns': len(filtered_sample_result['dstat'].columns),
+        'num_features': (len(
+            filtered_sample_result['dstat'].columns) * normalized_length)
+    }
+    gather_results.save_model_config(dataset, model_config)
+
+    # The test result for each example
+    classes = []
+    skips = []
+    print("Loading data")
+    for count, run in enumerate(runs):
+        print("%d of %d" % (count + 1, len(runs)), end='\r', flush=True)
+        result = gather_results.get_subunit_results_for_run(
+            run, sample_interval)
+        # For one run_uuid we must only get on example (result)
+        # Filtering by columns
+        if not result:
+            skips.append(run.uuid)
+            continue
+
+        # Apply column filtering
+        result = filter_example(result, features_regex)
+
+        # Normalize data
+        example = fixed_lenght_example(result, normalized_length)
+        vector = unroll_example(example, labels, normalized_length)
+
+        # Normalize status
+        status = get_class(result, class_label)
+
+        # Examples is an np ndarrays
+        examples[count] = vector.values
+        classes.append(status)
+
+        # Plot from figures
+        if visualize:
+            # Prepare some more data if we are going to visualize
+            sizes.append((result['dstat'].shape[0], status))
+            figure_name = sample_interval + "_%s_" + str(count)
+            # Plot un-normalized data
+            data_plot = result['dstat'].plot()
+            fig = data_plot.get_figure()
+            fig.savefig(os.sep.join(
+                data_plots_folder + [figure_name % "downsampled"]))
+            plt.close(fig)
+            # Plot fixed size data
+            fixed_plot = example.plot()
+            fig = fixed_plot.get_figure()
+            fig.savefig(os.sep.join(
+                data_plots_folder + [figure_name % "fixedsize"]))
+            plt.close(fig)
+            # Plot unrolled data
+            unrolled_plot = pd.Series(vector).plot()
+            fig = unrolled_plot.get_figure()
+            fig.savefig(os.sep.join(
+                data_plots_folder + [figure_name % "unrolled"]))
+            plt.close(fig)
+
+    print("Done.")
+    # Check that everything went well
+    if len(skips) > 0:
+        print('Unable to train model because of missing runs %s' % skips)
+        safe_runs = [run.uuid for run in runs if run.uuid not in skips]
+        gather_results.save_run_uuids(dataset, safe_runs)
+        print('The model has been updated to exclude those runs.')
+        print('Please re-run the training step.')
+        sys.exit(1)
+
+    classes = np.array(classes)
+    figure_sizes = np.array(sizes)
+    example_ids = runs
+
+    print("Examples: %s, Labels: %d, Classes: %s, Example IDs: %d" % (
+        str(examples.shape), len(labels), str(classes.shape),
+        len(example_ids)))
+
+    return examples, labels, classes, example_ids, figure_sizes
+
 def mqtt_trainer():
     event_queue = queue.Queue()
     listen_thread = listener.MQTTSubscribe(event_queue,
@@ -170,18 +319,6 @@ def mqtt_trainer():
         dstat_model = svm_trainer.SVMTrainer(examples, run_uuids, labels_list,
                                              classes)
         dstat_model.train()
-
-
-def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
-    """Returns the normalized lenght for a downsampled example
-
-    Returns the normalized example lenght based on the normalized lenght for
-    a full sample and the sample interval.
-    """
-    rng = pd.date_range('1/1/2012', periods=normalized_length, freq='S')
-    ts = pd.Series(np.ones(len(rng)), index=rng)
-    ts = ts.resample(sample_interval).sum()
-    return ts.shape[0]
 
 
 @click.command()
@@ -222,113 +359,24 @@ def dataset_build(dataset, build_name, limit, db_uri):
 @click.option('--debug/--no-debug', default=False)
 def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                   class_label, visualize, steps, gpu, debug):
-    # Normalized lenght before resampling
-    normalized_length = 5500
-    if sample_interval:
-        # Calculate the desired normalized lenght after resample
-        normalized_length = get_downsampled_example_lenght(
-            sample_interval, normalized_length)
 
-    data_plots_folder = [os.path.dirname(
-        os.path.realpath(__file__)), os.pardir, 'data', dataset, 'plots']
-    os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
-    runs = gather_results.load_run_uuids(dataset)
+    examples, labels, classes, example_ids, figure_sizes = prepare_dataset(
+        dataset, features_regex=features_regex,
+        sample_interval=sample_interval, class_label=class_label,
+        visualize=visualize)
 
-    # run_uuids are the example_ids
-    sizes = []
-    # The data for each example. We don't know yet the pre-set shape, so
-    # wait until the first result comes in
-    examples = []
-
-    # Model configuration. We need to cache sample_interval, features-regex and
-    # the normalization parameters for each feature so we can re-use them
-    # during prediction.
-    model_config = {
-        'sample_interval': sample_interval,
-        'features_regex': features_regex,
-        'normalized_length': normalized_length
-    }
-
-    # The test result for each example
-    classes = []
-    labels = []
-    idx = 0
-    skips = []
-    for run in runs:
-        results = gather_results.get_subunit_results_for_run(run,
-                                                             sample_interval)
-        # For one run_uuid we must only get on example (result)
-        result = results[0]
-        # Filtering by columns
-        if not result:
-            skips.append(run.uuid)
-            continue
-        df = result['dstat']
-        if features_regex:
-            col_regex = re.compile(features_regex)
-            result['dstat'] = df[list(filter(col_regex.search, df.columns))]
-        # Setup the numpy matrix and sizes
-        if len(examples) == 0:
-            # Adjust normalized_length to the actual re-sample one
-            examples = np.ndarray(
-                shape=(len(runs),
-                       len(result['dstat'].columns) * normalized_length))
-            model_config['num_columns'] = len(result['dstat'].columns)
-            model_config['num_features'] = (len(
-                result['dstat'].columns) * normalized_length)
-        # Normalize data
-        example = fixed_lenght_example(result, normalized_length)
-        # Normalize status
-        status = get_class(result, class_label)
-        vector, new_labels = unroll_example(example, normalized_length, labels)
-        # Only calculate labels for the first example
-        if len(labels) == 0:
-            labels = new_labels
-            model_config['labels'] = labels
-        print("Normalized example %d of %d" % (
-            runs.index(run) + 1, len(runs)), end='\r', flush=True)
-        # Examples is an np ndarrays
-        examples[idx] = vector.values
-        classes.append(status)
-        if visualize:
-            # Prepare some more data if we are going to visualize
-            sizes.append((result['dstat'].shape[0], status))
-            figure_name = sample_interval + "_%s_" + str(idx)
-            # Plot un-normalized data
-            data_plot = result['dstat'].plot()
-            fig = data_plot.get_figure()
-            fig.savefig(os.sep.join(
-                data_plots_folder + [figure_name % "downsampled"]))
-            plt.close(fig)
-            # Plot fixed size data
-            fixed_plot = example.plot()
-            fig = fixed_plot.get_figure()
-            fig.savefig(os.sep.join(
-                data_plots_folder + [figure_name % "fixedsize"]))
-            plt.close(fig)
-            # Plot unrolled data
-            unrolled_plot = pd.Series(vector).plot()
-            fig = unrolled_plot.get_figure()
-            fig.savefig(os.sep.join(
-                data_plots_folder + [figure_name % "unrolled"]))
-            plt.close(fig)
-        idx += 1
-    if len(skips) > 0:
-        print('Unable to train model because of missing runs %s' % skips)
-        safe_runs = [run.uuid for run in runs if run.uuid not in skips]
-        gather_results.save_run_uuids(dataset, safe_runs)
-        print('The model has been updated to exclude those runs.')
-        print('Please re-run the training step.')
-        sys.exit(1)
     # Perform dataset-wise normalization
     # NOTE(andreaf) When we train the model we ignore any saved normalization
     # parameter, since the sample interval and features may be different.
     n_examples, normalization_params = normalize_dataset(examples, labels)
     # We do cache the result to normalize the prediction set.
+    model_config = gather_results.load_model_config(dataset)
     model_config['normalization_params'] = normalization_params
     gather_results.save_model_config(dataset, model_config)
+
+    # Plot some more figures
     if visualize:
-        for n in range(len(runs)):
+        for n in range(n_examples.shape(1)):
             figure_name = sample_interval + "_%s_" + str(n)
             unrolled_norm_plot = pd.Series(n_examples[n]).plot()
             fig = unrolled_norm_plot.get_figure()
@@ -336,16 +384,13 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
                 data_plots_folder + [figure_name % "normalized"]))
             plt.close(fig)
 
-        np_sizes = np.array(sizes)
-        df = pd.DataFrame(np_sizes, columns=['size', 'status'])
+        df = pd.DataFrame(figure_sizes, columns=['size', 'status'])
         size_plot = df.plot.scatter(x='size', y='status')
         fig = size_plot.get_figure()
         fig.savefig(os.sep.join(data_plots_folder + ['sizes_by_result.png']))
         plt.close(fig)
 
     # Now do the training
-    exmple_ids = [run.uuid for run in runs]
-    classes = np.array(classes)
     print("\nTraining data shape: (%d, %d)" % n_examples.shape)
     if train:
         if debug:
@@ -353,7 +398,7 @@ def local_trainer(train, estimator, dataset, sample_interval, features_regex,
         config = tf.ConfigProto(log_device_placement=True,)
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
-        model = svm_trainer.SVMTrainer(n_examples, exmple_ids, labels,
+        model = svm_trainer.SVMTrainer(n_examples, example_ids, labels,
                                        classes, dataset_name=dataset,
                                        force_gpu=gpu)
         model.train(steps=steps)

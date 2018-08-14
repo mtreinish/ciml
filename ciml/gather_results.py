@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import collections
 import datetime
 import gzip
 import io
@@ -57,7 +58,7 @@ def _parse_dstat_file(input_io, sample_interval=None):
 
 
 def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
-                    data_path=None):
+                    use_http=True, data_path=None):
     """Obtains and parses a dstat file to a pandas.DatetimeIndex
 
     Finds a dstat file in the local cache or downloads it from the
@@ -79,7 +80,9 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         try:
             with gzip.open(raw_data_file, mode='r') as f:
                 try:
-                    print("%s: dstat found in cache" % run_uuid)
+                    if use_http:
+                        # When using remote let me know if loading from cache
+                        print("%s: dstat found in cache" % run_uuid)
                     return _parse_dstat_file(f, sample_interval)
                 except pandas.errors.ParserError:
                     print('Currupted data in %s, deleting.' % raw_data_file,
@@ -90,6 +93,10 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
             print('Run %s found in the local dataset, however: %s',
                   (run_uuid, ioe))
             return None
+
+    # If no cache and use_http is False, nothing more we can do
+    if not use_http:
+        print("No local cache found for %s, and use_http false" % run_uuid)
 
     # If no local cache was found we try to fetch the dstats file via HTTP
     # and we store it in cache.
@@ -117,7 +124,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         return None
 
 
-def _get_result_for_run(run, session, use_cache=True, data_path=None):
+def _get_result_for_run(run, session, use_cache=True, use_db=True,
+                        get_tests=False, data_path=None):
     # First try to get the data from disk
     if not data_path:
         metadata_folder = [os.path.dirname(os.path.realpath(__file__)),
@@ -129,7 +137,9 @@ def _get_result_for_run(run, session, use_cache=True, data_path=None):
     if use_cache:
         if os.path.isfile(result_file):
             try:
-                print("%s: metadata found in cache" % run.uuid)
+                if use_db:
+                    # When using remote let me know if loading from cache
+                    print("%s: metadata found in cache" % run.uuid)
                 with gzip.open(result_file, mode='r') as f:
                     return json.loads(f.read())
             except IOError as ioe:
@@ -138,21 +148,31 @@ def _get_result_for_run(run, session, use_cache=True, data_path=None):
                 print('Run %s found in the local dataset, however: %s',
                       (run.uuid, ioe))
                 return None
+    # If no local cache, and use_db is False, return nothing
+    if not use_db:
+        print("No local data for %s, use_db set to false" % run.uuid)
+        return None
+
     # If no local cache, get data from the DB
     result = {}
-    test_runs = api.get_test_runs_by_run_id(run.uuid, session=session)
-    tests = []
-    for test_run in test_runs:
-        test = {'status': test_run.status}
-        start_time = test_run.start_time
-        start_time = start_time.replace(
-            microsecond=test_run.start_time_microsecond)
-        stop_time = test_run.stop_time
-        stop_time = stop_time.replace(
-            microsecond=test_run.stop_time_microsecond)
-        test['start_time'] = start_time
-        test['stop_time'] = stop_time
-        tests.append(test)
+
+    # We may need the list of tests
+    if get_tests:
+        test_runs = api.get_test_runs_by_run_id(run.uuid, session=session)
+        tests = []
+        for test_run in test_runs:
+            test = {'status': test_run.status}
+            start_time = test_run.start_time
+            start_time = start_time.replace(
+                microsecond=test_run.start_time_microsecond)
+            stop_time = test_run.stop_time
+            stop_time = stop_time.replace(
+                microsecond=test_run.stop_time_microsecond)
+            test['start_time'] = start_time
+            test['stop_time'] = stop_time
+            tests.append(test)
+
+    # Setup run metadata
     if run.fails > 0 or run.passes == 0:
         result['status'] = 1  # Failed
     else:
@@ -162,25 +182,35 @@ def _get_result_for_run(run, session, use_cache=True, data_path=None):
     metadata = api.get_run_metadata(run.uuid, session)
     for md in metadata:
         result[md['key']] = md['value']
+
     # Cache the json file, without tests
     with gzip.open(result_file, mode='wb') as local_cache:
         local_cache.write(json.dumps(result).encode())
     print("%s: metada cached from URL")
-    result['tests'] = tests
+
+    # Adding the tests after caching
+    if get_tests:
+        result['tests'] = tests
     return result
 
 
-def _get_data_for_run(run, sample_interval, session, use_cache=True,
-                      data_path=None):
+def _get_data_for_run(run, sample_interval, session=None, use_cache=True,
+                      use_remote=True, data_path=None):
     # First ensure we can get dstat data
     dstat = _get_dstat_file(run.artifacts, run.uuid, sample_interval,
-                            data_path=data_path)
+                            use_http=use_remote, data_path=data_path)
     if dstat is None:
         return None
-    result = _get_result_for_run(run, session, use_cache, data_path=data_path)
+    result = _get_result_for_run(run, session, use_cache,
+                                 use_db=use_remote, data_path=data_path)
     result['dstat'] = dstat
     return result
 
+def _get_local_data_for_run_id(run_id, sample_interval, data_path=None):
+    Run = collections.namedtuple('Run', ['uuid', 'artifacts'])
+    return _get_data_for_run(Run(uuid=run_id, artifacts=None), sample_interval,
+                             session=None, use_cache=True, use_remote=False,
+                             data_path=data_path)
 
 def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
                         build_name='tempest-full', use_cache=True,
@@ -212,17 +242,10 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
     return results
 
 
-def get_subunit_results_for_run(run, sample_interval, db_uri=None,
-                                use_cache=True, session=None, data_path=None):
-    if db_uri:
-        # When running from a local set the db_uri is not going to be set
-        engine = create_engine(db_uri)
-        Session = sessionmaker(bind=engine)
-        session = Session()
-    else:
-        session = session
-    return [_get_data_for_run(run, sample_interval, session,
-                              use_cache=use_cache, data_path=data_path)]
+def get_subunit_results_for_run(run_id, sample_interval, data_path=None):
+    """Get data for run from cache only"""
+    return _get_local_data_for_run_id(run_id, sample_interval,
+                                      data_path=data_path)
 
 def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
                                       session=None, data_path=None):

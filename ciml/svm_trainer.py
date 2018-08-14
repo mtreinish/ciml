@@ -40,13 +40,18 @@ class SVMTrainer(object):
             model_data_folder = os.sep.join([model_path, 'data', dataset_name,
                                              'model'])
         os.makedirs(model_data_folder, exist_ok=True)
+        my_checkpointing_config = tf.estimator.RunConfig(
+            save_checkpoints_secs = 10,  # Save checkpoints every 20 minutes.
+            keep_checkpoint_max = 100,       # Retain the 10 most recent checkpoints.
+        )
         self.estimator = tf.contrib.learn.SVM(
             feature_columns=self.feature_columns,
             example_id_column='example_id',
             model_dir=model_data_folder,
-            feature_engineering_fn=self.feature_engineering_fn)
+            feature_engineering_fn=self.feature_engineering_fn,
+            config=my_checkpointing_config)
 
-        # Separate traing set and evaluation set by building randomised lists
+        # Separate training set and evaluation set by building randomised lists
         # of indexes that can be used for examples, example_ids and classes
         self.all_indexes = range(len(self.example_ids))
         self.training_idx = pd.Series(self.all_indexes).sample(
