@@ -306,35 +306,64 @@ def get_runs_by_name(db_uri, build_name, session=None):
     return full_out
 
 
-def save_model_config(dataset, model_config, data_path=None):
+def get_data_json_folder_list(dataset, sub_folder=None, data_path=None):
     if not data_path:
-        data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                       'data', dataset]
+        dataset_folder = [os.path.dirname(os.path.realpath(__file__)),
+                          os.pardir]
     else:
-        data_folder = [data_path, 'data', dataset]
-    os.makedirs(os.sep.join(data_folder), exist_ok=True)
-    model_config_file = os.sep.join(data_folder + ['model_config.json.gz'])
+        dataset_folder = [data_path]
+    dataset_folder.extend(['data', dataset])
+    if sub_folder:
+        dataset_folder.append(sub_folder)
+    return dataset_folder
 
-    with gzip.open(model_config_file, mode='wb') as local_cache:
-        local_cache.write(json.dumps(model_config).encode())
+def get_data_json_folder(dataset, sub_folder=None, data_path=None):
+    return os.sep.join(get_data_json_folder_list(dataset,
+                                                 sub_folder=sub_folder,
+                                                 data_path=data_path))
+
+def save_data_json(dataset, data, name, sub_folder=None, data_path=None):
+    """Save a JSON serializable object to disk
+    """
+    dataset_folder = get_data_json_folder_list(dataset,
+                                               sub_folder=sub_folder,
+                                               data_path=data_path)
+    os.makedirs(os.sep.join(dataset_folder), exist_ok=True)
+    dataset_folder.append(name + '.json.gz')
+    full_filename = os.sep.join(dataset_folder)
+    with gzip.open(full_filename, mode='wb') as local_cache:
+        local_cache.write(json.dumps(data).encode())
+
+
+def load_data_json(dataset, name, ignore_error=False, sub_folder=None,
+                   data_path=None):
+    """Load a JSON serializable object from disk
+    """
+    dataset_folder = get_data_json_folder_list(dataset,
+                                               sub_folder=sub_folder,
+                                               data_path=data_path)
+    dataset_folder.append(name + '.json.gz')
+    full_filename = os.sep.join(dataset_folder)
+
+    if os.path.isfile(full_filename):
+        try:
+            with gzip.open(full_filename, mode='r') as f:
+                return json.load(f)
+        except IOError as ioe:
+            # Ignore error
+            if ignore_error:
+                print('Ignore error when loading: %s', ioe)
+                return None
+            else:
+                raise
 
 
 def load_model_config(dataset, data_path=None):
-    if not data_path:
-        data_folder = [os.path.dirname(os.path.realpath(__file__)), os.pardir,
-                       'data', dataset]
-    else:
-        data_folder = [data_path, 'data', dataset]
-    model_config_file = os.sep.join(data_folder + ['model_config.json.gz'])
-    if os.path.isfile(model_config_file):
-        try:
-            with gzip.open(model_config_file, mode='r') as f:
-                return json.loads(f.read())
-        except IOError as ioe:
-            # Something went wrong opening the file, so we won't load this run.
-            print('Dataset config found in the local dataset, however: %s',
-                  ioe)
-            return None
+    return load_data_json(dataset, 'model_config', data_path=data_path)
+
+
+def save_model_config(dataset, model_config, data_path=None):
+    save_data_json(dataset, model_config, 'model_config', data_path=data_path)
 
 
 def load_run_uuids(dataset, name='runs', data_path=None):
@@ -342,35 +371,25 @@ def load_run_uuids(dataset, name='runs', data_path=None):
 
     Read the list of run uuids from file and return a list of run uuids.
     """
-    if not data_path:
-        dataset_runs = os.sep.join([
-            os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data',
-            dataset, name + '.json.gz'])
-    else:
-        dataset_runs = os.sep.join([data_path, 'data', dataset,
-                                    name + '.json.gz'])
-    if os.path.isfile(dataset_runs):
-        try:
-            with gzip.open(dataset_runs, mode='r') as f:
-                return json.load(f)
-        except IOError as ioe:
-            # Something went wrong opening the file, so we won't load this run.
-            print('Run found in the local dataset, however: %s', ioe)
-            return None
+    return load_data_json(dataset, name, data_path=data_path)
 
 
 def save_run_uuids(dataset, run_uuids, name='runs', data_path=None):
-    if not data_path:
-        dataset_folder = [os.path.dirname(os.path.realpath(__file__)),
-                          os.pardir]
-    else:
-        dataset_folder = [data_path]
-    dataset_folder.extend(['data', dataset])
-    os.makedirs(os.sep.join(dataset_folder), exist_ok=True)
-    dataset_folder.append(name + '.json.gz')
-    dataset_runs = os.sep.join(dataset_folder)
-    with gzip.open(dataset_runs, mode='wb') as local_cache:
-        local_cache.write(json.dumps(list(run_uuids)).encode())
+    save_data_json(dataset, list(run_uuids), name, data_path=data_path)
+
+
+def load_experiment(dataset, name, data_path=None):
+    return load_data_json(dataset, 'experiment', sub_folder=name,
+                          data_path=data_path)
+
+
+def save_experiment(dataset, experiment, name, data_path=None):
+    save_data_json(dataset, experiment, 'experiment', sub_folder=name,
+                   data_path=data_path)
+
+
+def get_experiment_folder(dataset, name, data_path=None):
+    return get_data_json_folder(dataset, sub_folder=name)
 
 
 def load_dataset(dataset, name, data_path=None):

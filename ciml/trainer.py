@@ -25,6 +25,7 @@ from ciml import gather_results
 from ciml import listener
 from ciml import nn_trainer
 from ciml import svm_trainer
+from ciml import tf_trainer
 
 import click
 import matplotlib.pyplot as plt
@@ -464,25 +465,100 @@ def build_dataset(dataset, build_name, limit, sample_interval, features_regex,
 
 
 @click.command()
-@click.option('--estimator', default='tf.estimator.DNNClassifier',
-              help='Type of model to be used (not implemented yet).')
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
-@click.option('--steps', default=30, help="Number of training steps")
+@click.option('--experiment', default='experiment',
+              help="Name of the experiment")
+@click.option('--estimator', default='tf.estimator.DNNClassifier',
+              help='Type of model to be used (not implemented yet).')
+@click.option('--steps', default=30,
+              help="Hyper param: number of training steps")
+@click.option('--hidden-layers', default='10/10/10',
+              help='A string that represents the number of layers and units')
+def setup_experiment(dataset, experiment, estimator, steps, hidden_layers):
+    # Check that the dataset exists
+    if not gather_results.load_model_config(dataset):
+        print("Dataset %s not found" % dataset)
+        sys.exit(1)
+    # Prevent overwrite by mistake
+    if gather_results.load_experiment(dataset, experiment):
+        print("Experiment %s/%s already configured" % (dataset, experiment))
+        sys.exit(1)
+    params = {}
+    hyper_params = {
+        'steps': steps,
+        'hidden_units': [x for x in map(lambda x:int(x),
+                                        hidden_layers.split('/'))]
+    }
+    experiment_data = {
+        'estimator': estimator,
+        'params': params,
+        'hyper_params': hyper_params
+    }
+    # Store the experiment to disk
+    gather_results.save_experiment(dataset, experiment_data, experiment)
+    print("Experiment %s/%s saved successfully." % (dataset, experiment))
+    print("\testimator: %s" % estimator)
+    print("\tparameters: %s" % params)
+    print("\thyper parameters: %s" % hyper_params)
+
+
+@click.command()
+@click.option('--dataset', default="dataset",
+              help="Name of the dataset folder.")
+@click.option('--experiment', default='experiment',
+              help="Name of the experiment")
 @click.option('--gpu', default=False, help='Force using gpu')
 @click.option('--debug/--no-debug', default=False)
-def local_trainer(estimator, dataset, steps, gpu, debug):
+def local_trainer(dataset, experiment, gpu, debug):
+    # Load experiment data
+    experiment_data = gather_results.load_experiment(dataset, experiment)
+    if not experiment_data:
+        print("Experiment %s in dataset %s not found" % (experiment, dataset))
+        sys.exit(1)
+
+    # Read hyper_params and params
+    estimator = experiment_data['estimator']
+    hyper_params = experiment_data['hyper_params']
+    params = experiment_data['params']
+    steps = hyper_params['steps']
+
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
     config = tf.ConfigProto(log_device_placement=True,)
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
     # Load the normalized data
-    labels = gather_results.load_dataset(dataset, 'labels')
+    labels = gather_results.load_dataset(dataset, 'labels')['labels']
     training_data = gather_results.load_dataset(dataset, 'training')
     test_data = gather_results.load_dataset(dataset, 'test')
-    print("\nTraining data shape: (%d, %d)" % training_data['examples'].shape)
-    print("\nEvaluation data shape: (%d, %d)" % test_data['examples'].shape)
-    model = svm_trainer.SVMTrainer(labels, training_data, test_data,
-                                   dataset_name=dataset, force_gpu=gpu)
-    model.train(steps=steps)
+    print("Training data shape: (%d, %d)" % training_data['examples'].shape)
+    print("Evaluation data shape: (%d, %d)" % test_data['examples'].shape)
+
+    # Get the estimator
+    model_dir = gather_results.get_data_json_folder(dataset, experiment)
+    estimator = tf_trainer.get_estimator(
+        estimator, hyper_params, params, labels, model_dir)
+
+    # Now do the training and evalutation
+    if gpu:
+        with tf.device('/device:GPU:0'):
+            # Training
+            tf_trainer.get_training_method(estimator)(
+                input_fn=lambda: tf_trainer.input_fn(
+                labels=labels, **training_data), steps=steps)
+            # Eval
+            eval_loss = estimator.evaluate(
+                input_fn=lambda: tf_trainer.input_fn(
+                    labels=labels, **test_data), steps=1)
+    else:
+        # Training
+        tf_trainer.get_training_method(estimator)(
+            input_fn=lambda: tf_trainer.input_fn(
+            labels=labels, **training_data), steps=steps)
+        # Eval
+        eval_loss = estimator.evaluate(
+            input_fn=lambda: tf_trainer.input_fn(
+                labels=labels, **test_data), steps=1)
+    # Logging loss
+    print('Training loss after eval %r' % eval_loss)

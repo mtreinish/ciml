@@ -49,7 +49,7 @@ class SVMTrainer(object):
             model_dir=model_data_folder,
             config=my_checkpointing_config)
 
-    def input_fn(self, examples, example_ids, classes, return_classes=True):
+    def input_fn(self, examples, example_ids, classes):
         num_features = len(self.feature_columns)
         # Dict comprehension to build a dict of features
         # I suppose numpy might be able to do this more efficiently
@@ -59,10 +59,7 @@ class SVMTrainer(object):
             for n in range(num_features)}
         _features['example_id'] = tf.constant(example_ids)
         print("Done preparing input data")
-        if return_classes:
-            return _features, tf.constant(classes)
-        else:
-            return _features
+        return _features, tf.constant(classes)
 
     def training_input_fn(self):
         return self.input_fn(**self.training_data)
@@ -82,10 +79,3 @@ class SVMTrainer(object):
             train_loss = self.estimator.evaluate(
                 input_fn=self.evaluate_input_fn, steps=1)
         print('Training loss %r' % train_loss)
-
-    def predict_fn(self):
-        return self.input_fn(return_classes=False, **self.training_data)
-
-    def predict(self):
-        prediction = list(self.estimator.predict(input_fn=self.predict_fn))
-        return prediction
