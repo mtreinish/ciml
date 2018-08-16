@@ -22,18 +22,25 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 
 def get_feature_columns(labels):
-    return [tf.contrib.layers.real_valued_column(x) for x in labels]
+    return [tf.feature_column.numeric_column(x) for x in labels]
 
 
-def input_fn(examples, example_ids, classes, labels):
-    feature_columns = get_feature_columns(labels)
-    num_features = len(labels)
+def get_input_fn(examples, example_ids, classes, labels,
+                 shuffle=False, batch_size=None, num_epochs=None):
+    """Generate an input_fn to feed the estimator
+
+    Input: examples, classes, labels, batch size, num epochs
+    Output: a function that emits data for the estimator
+    """
+    _numpy_input_fn = tf.estimator.inputs.numpy_input_fn
     # Dict comprehension to build a dict of features
     # I suppose numpy might be able to do this more efficiently
     _features = {
-        labels[n]: tf.constant(examples[:,n]) for n in range(num_features)}
-    # _features['example_id'] = tf.constant(example_ids)
-    return _features, tf.constant(classes)
+        labels[n]: examples[:,n] for n in range(len(labels))}
+    params = {}
+    if batch_size: params['batch_size'] = batch_size
+    if num_epochs: params['num_epochs'] = num_epochs
+    return _numpy_input_fn(_features, classes, shuffle=shuffle, **params)
 
 
 def get_checkpoint_config():

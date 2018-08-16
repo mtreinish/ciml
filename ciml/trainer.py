@@ -545,20 +545,20 @@ def local_trainer(dataset, experiment, gpu, debug):
         with tf.device('/device:GPU:0'):
             # Training
             tf_trainer.get_training_method(estimator)(
-                input_fn=lambda: tf_trainer.input_fn(
+                input_fn=tf_trainer.get_input_fn(shuffle=True,
                 labels=labels, **training_data), steps=steps)
             # Eval
             eval_loss = estimator.evaluate(
-                input_fn=lambda: tf_trainer.input_fn(
-                    labels=labels, **test_data), steps=1)
+                input_fn=lambda: tf_trainer.get_input_fn(
+                labels=labels, **test_data), steps=1)
     else:
         # Training
         tf_trainer.get_training_method(estimator)(
-            input_fn=lambda: tf_trainer.input_fn(
+            input_fn=tf_trainer.get_input_fn(shuffle=True,
             labels=labels, **training_data), steps=steps)
         # Eval
         eval_loss = estimator.evaluate(
-            input_fn=lambda: tf_trainer.input_fn(
-                labels=labels, **test_data), steps=1)
+            input_fn=tf_trainer.get_input_fn(
+            labels=labels, **test_data), steps=1)
     # Logging loss
     print('Training loss after eval %r' % eval_loss)
