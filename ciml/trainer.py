@@ -156,6 +156,8 @@ def normalize_dataset(examples, labels, params=None):
         else:
             mean_fd = np.mean(feature_data)
             max_min_fd = np.max(feature_data) - np.min(feature_data)
+            # In case of just one example, or a flat feature
+            if max_min_fd == 0: max_min_fd = 1
             params[labels[n]] = (mean_fd, max_min_fd)
         _features[n] = list(
             map(lambda x: (x - mean_fd) / max_min_fd, feature_data))
@@ -245,6 +247,7 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
 
         # Normalize data
         example = fixed_lenght_example(result, normalized_length)
+
         vector = unroll_example(example, normalized_length)
 
         # Normalize status
@@ -334,19 +337,24 @@ def dataset_split_filters(size, training, dev):
     # Separate training, dev and test sets by building randomised lists
     # of indexes that can be used for examples, example_ids and classes
     all_indexes = range(size)
-    training_idx = pd.Series(all_indexes).sample(int(size * training)).values
+    training_idx = []
+    dev_idx = []
+    test_idx = []
+    if training > 0:
+        training_idx = pd.Series(all_indexes).sample(
+            int(size * training)).values
     non_training_idx = list(set(all_indexes) - set(training_idx))
-    remaining_size = int(size * (1 - training))
-    dev_idx = pd.Series(non_training_idx).sample(
-        int(remaining_size * dev)).values
-    test_idx = list(set(non_training_idx) - set(dev_idx))
+    if dev > 0:
+        dev_idx = pd.Series(non_training_idx).sample(int(size * dev)).values
+    if (training + dev) < 1:
+        test_idx = list(set(non_training_idx) - set(dev_idx))
     return training_idx, dev_idx, test_idx
 
 @click.command()
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
 @click.option('--build-name', default="tempest-full", help="Build name.")
-@click.option('--limit', default=0, help="Maximum number of entries")
+@click.option('--slicer', default=":", help="Slice of the dataset")
 @click.option('--sample-interval', default=None,
               help='dstat (down)sampling interval')
 @click.option('--features-regex', default=None,
@@ -355,12 +363,14 @@ def dataset_split_filters(size, training, dev):
               help='Label that identifies the type of result for the dataset')
 @click.option('--tdt-split', nargs=3, type=int, default=(6, 2, 2),
               help='Trainig, dev and test dataset split - sum to 10')
+@click.option('--force', default=False,
+              help='When True, override existing dataset config')
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
-def build_dataset(dataset, build_name, limit, sample_interval, features_regex,
-                  class_label, tdt_split, visualize):
+def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
+                  class_label, tdt_split, force, visualize):
     # Prevent overwrite by mistake
-    if gather_results.load_model_config(dataset):
+    if gather_results.load_model_config(dataset) and not force:
         print("Dataset %s already configured" % dataset)
         sys.exit(1)
 
@@ -372,9 +382,10 @@ def build_dataset(dataset, build_name, limit, sample_interval, features_regex,
 
     # Load available run ids for the build name
     runs = gather_results.load_run_uuids('.raw', name=build_name)
-    # Apply the limit
-    if limit > 0:
-        runs = np.array(runs[:limit])
+    # Apply the slice
+    slice_fn = lambda x: int(x.strip()) if x.strip() else None
+    slice_object = slice(*map(slice_fn, slicer.split(":")))
+    runs = np.array(runs[slice_object])
     print("Obtained %d runs for build %s" % (len(runs), build_name))
 
     # Split the runs in training, dev and test
@@ -419,11 +430,14 @@ def build_dataset(dataset, build_name, limit, sample_interval, features_regex,
             visualize=visualize)
         datasets[data_type] = data
         examples = data['examples']
+        if len(examples) == 0:
+            continue
 
         # Perform dataset-wise normalization
         if data_type == 'training':
             n_examples, normalization_params = normalize_dataset(
                 examples, labels)
+
             # We cache normalization parameters from the training data set
             # to normalize the dev and test set, as well as other input data
             model_config['normalization_params'] = normalization_params
@@ -471,11 +485,14 @@ def build_dataset(dataset, build_name, limit, sample_interval, features_regex,
               help="Name of the experiment")
 @click.option('--estimator', default='tf.estimator.DNNClassifier',
               help='Type of model to be used (not implemented yet).')
-@click.option('--steps', default=30,
-              help="Hyper param: number of training steps")
 @click.option('--hidden-layers', default='10/10/10',
               help='A string that represents the number of layers and units')
-def setup_experiment(dataset, experiment, estimator, steps, hidden_layers):
+@click.option('--steps', default=30,
+              help="Hyper param: max number of training steps")
+@click.option('--batches', default='1', help='Hyper param: Number of batches')
+@click.option('--epochs', default='1', help='Hyper param: Number of epochs')
+def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
+                     batches, epochs):
     # Check that the dataset exists
     if not gather_results.load_model_config(dataset):
         print("Dataset %s not found" % dataset)
@@ -487,6 +504,8 @@ def setup_experiment(dataset, experiment, estimator, steps, hidden_layers):
     params = {}
     hyper_params = {
         'steps': steps,
+        'batches': batches,
+        'epochs': epochs,
         'hidden_units': [x for x in map(lambda x:int(x),
                                         hidden_layers.split('/'))]
     }
@@ -521,7 +540,9 @@ def local_trainer(dataset, experiment, gpu, debug):
     estimator = experiment_data['estimator']
     hyper_params = experiment_data['hyper_params']
     params = experiment_data['params']
-    steps = hyper_params['steps']
+    steps = int(hyper_params['steps'])
+    num_epochs = int(hyper_params['epochs'])
+    batch_size = int(hyper_params['batches'])
 
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
@@ -546,19 +567,23 @@ def local_trainer(dataset, experiment, gpu, debug):
             # Training
             tf_trainer.get_training_method(estimator)(
                 input_fn=tf_trainer.get_input_fn(shuffle=True,
-                labels=labels, **training_data), steps=steps)
+                    batch_size=batch_size, num_epochs=num_epochs,
+                    labels=labels, **training_data), steps=steps)
             # Eval
             eval_loss = estimator.evaluate(
                 input_fn=lambda: tf_trainer.get_input_fn(
-                labels=labels, **test_data), steps=1)
+                    batch_size=batch_size, num_epochs=num_epochs,
+                    labels=labels, **test_data), steps=1)
     else:
         # Training
         tf_trainer.get_training_method(estimator)(
             input_fn=tf_trainer.get_input_fn(shuffle=True,
-            labels=labels, **training_data), steps=steps)
+                batch_size=batch_size, num_epochs=num_epochs,
+                labels=labels, **training_data), steps=steps)
         # Eval
         eval_loss = estimator.evaluate(
             input_fn=tf_trainer.get_input_fn(
-            labels=labels, **test_data), steps=1)
+                batch_size=batch_size, num_epochs=num_epochs,
+                labels=labels, **test_data), steps=1)
     # Logging loss
     print('Training loss after eval %r' % eval_loss)

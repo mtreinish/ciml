@@ -63,6 +63,8 @@ def _parse_dstat_file(input_io, sample_interval=None):
     out.index = pd.DatetimeIndex(out.index)
     if sample_interval:
         out = out.resample(sample_interval).mean()
+    # Remove any NaN from resampling
+    out = out.dropna()
     return out
 
 
@@ -195,7 +197,7 @@ def _get_result_for_run(run, session, use_cache=True, use_db=True,
     # Cache the json file, without tests
     with gzip.open(result_file, mode='wb') as local_cache:
         local_cache.write(json.dumps(result).encode())
-    print("%s: metada cached from URL")
+    print("%s: metadata cached from URL" % run.uuid)
 
     # Adding the tests after caching
     if get_tests:
@@ -415,7 +417,7 @@ def save_dataset(dataset, name, data_path=None, **kwargs):
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
 @click.option('--limit', default=0, help="Maximum number of entries")
-def cache_data(build_name, db_uri):
+def cache_data(build_name, db_uri, limit):
     runs = get_runs_by_name(db_uri, build_name=build_name)
     print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
     limit_runs = gather_and_cache_results_for_runs(
