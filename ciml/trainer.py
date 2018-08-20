@@ -490,10 +490,10 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
               help='A string that represents the number of layers and units')
 @click.option('--steps', default=30,
               help="Hyper param: max number of training steps")
-@click.option('--batches', default='1', help='Hyper param: Number of batches')
+@click.option('--batch-size', default='1', help='Hyper param: Number of batches')
 @click.option('--epochs', default='1', help='Hyper param: Number of epochs')
 def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
-                     batches, epochs):
+                     batch_size, epochs):
     # Check that the dataset exists
     if not gather_results.load_model_config(dataset):
         print("Dataset %s not found" % dataset)
@@ -505,7 +505,7 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
     params = {}
     hyper_params = {
         'steps': steps,
-        'batches': batches,
+        'batch_size': batch_size,
         'epochs': epochs,
         'hidden_units': [x for x in map(lambda x:int(x),
                                         hidden_layers.split('/'))]
@@ -543,7 +543,7 @@ def local_trainer(dataset, experiment, gpu, debug):
     params = experiment_data['params']
     steps = int(hyper_params['steps'])
     num_epochs = int(hyper_params['epochs'])
-    batch_size = int(hyper_params['batches'])
+    batch_size = int(hyper_params['batch_size'])
 
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
