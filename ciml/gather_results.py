@@ -327,6 +327,19 @@ def get_data_json_folder(dataset, sub_folder=None, data_path=None):
 def save_data_json(dataset, data, name, sub_folder=None, data_path=None):
     """Save a JSON serializable object to disk
     """
+
+    # Courtesy of [fangyh]
+    class MyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            else:
+                return super(MyEncoder, self).default(obj)
+
     dataset_folder = get_data_json_folder_list(dataset,
                                                sub_folder=sub_folder,
                                                data_path=data_path)
@@ -334,7 +347,7 @@ def save_data_json(dataset, data, name, sub_folder=None, data_path=None):
     dataset_folder.append(name + '.json.gz')
     full_filename = os.sep.join(dataset_folder)
     with gzip.open(full_filename, mode='wb') as local_cache:
-        local_cache.write(json.dumps(data).encode())
+        local_cache.write(json.dumps(data, cls=MyEncoder).encode())
 
 
 def load_data_json(dataset, name, ignore_error=False, sub_folder=None,

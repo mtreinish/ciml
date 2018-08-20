@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import itertools
 import os
 import queue
@@ -156,7 +157,7 @@ def normalize_dataset(examples, labels, params=None):
         else:
             mean_fd = np.mean(feature_data)
             max_min_fd = np.max(feature_data) - np.min(feature_data)
-            # In case of just one example, or a flat feature
+            # In case of just one example, or
             if max_min_fd == 0: max_min_fd = 1
             params[labels[n]] = (mean_fd, max_min_fd)
         _features[n] = list(
@@ -557,7 +558,7 @@ def local_trainer(dataset, experiment, gpu, debug):
     print("Evaluation data shape: (%d, %d)" % test_data['examples'].shape)
 
     # Get the estimator
-    model_dir = gather_results.get_data_json_folder(dataset, experiment)
+    model_dir = gather_results.get_experiment_folder(dataset, experiment)
     estimator = tf_trainer.get_estimator(
         estimator, hyper_params, params, labels, model_dir)
 
@@ -572,8 +573,8 @@ def local_trainer(dataset, experiment, gpu, debug):
             # Eval
             eval_loss = estimator.evaluate(
                 input_fn=lambda: tf_trainer.get_input_fn(
-                    batch_size=batch_size, num_epochs=num_epochs,
-                    labels=labels, **test_data), steps=1)
+                    batch_size=batch_size, num_epochs=1,
+                    labels=labels, **test_data))
     else:
         # Training
         tf_trainer.get_training_method(estimator)(
@@ -583,7 +584,12 @@ def local_trainer(dataset, experiment, gpu, debug):
         # Eval
         eval_loss = estimator.evaluate(
             input_fn=tf_trainer.get_input_fn(
-                batch_size=batch_size, num_epochs=num_epochs,
-                labels=labels, **test_data), steps=1)
-    # Logging loss
+                batch_size=batch_size, num_epochs=1,
+                labels=labels, **test_data))
+    # Saving and Logging loss
     print('Training loss after eval %r' % eval_loss)
+    eval_name = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M") + "_eval"
+    gather_results.save_data_json(dataset, eval_loss, eval_name,
+                                  sub_folder=experiment)
+    gather_results.save_data_json(dataset, eval_loss, "eval",
+                                  sub_folder=experiment)
