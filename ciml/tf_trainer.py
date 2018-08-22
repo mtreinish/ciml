@@ -49,24 +49,37 @@ def get_checkpoint_config():
         keep_checkpoint_max = 100,   # Retain the 100 most recent checkpoints.
     )
 
-def get_estimator(estimator_name, hyper_params, params, labels, model_dir):
+def get_estimator(estimator_name, hyper_params, params, labels, model_dir,
+                  optimizer=None, label_vocabulary=None):
 
+    estimator_params = {}
+    if optimizer:
+        estimator_params['optimizer'] = optimizer
+
+    # If no vocabulary is passed, we assume 2 classes with 0 and 1 values
+    estimator_params['n_classes'] = 2
+    if label_vocabulary:
+        estimator_params['n_classes'] = len(label_vocabulary)
+        estimator_params['label_vocabulary'] = list(label_vocabulary)
     # SVM Model
     if estimator_name == 'tf.contrib.learn.SVM':
         return tf.contrib.learn.SVM(
             feature_columns=get_feature_columns(labels),
             example_id_column='example_id',
             model_dir=model_dir,
-            config=get_checkpoint_config())
+            config=get_checkpoint_config(),
+            **estimator_params)
 
     # DNN Model
     if estimator_name == 'tf.estimator.DNNClassifier':
-        return tf.estimator.DNNClassifier(
+        estimator = tf.estimator.DNNClassifier(
             feature_columns=get_feature_columns(labels),
             model_dir=model_dir,
             config=get_checkpoint_config(),
             hidden_units=hyper_params['hidden_units'],
-            n_classes=2)
+            **estimator_params)
+        return estimator
+
 
 def get_training_method(estimator):
     if type(estimator).__name__ == 'SVM':

@@ -33,10 +33,25 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tensorflow.python.training import adagrad
+from tensorflow.python.training import adam
+from tensorflow.python.training import ftrl
+from tensorflow.python.training import gradient_descent
+from tensorflow.python.training import rmsprop
+from tensorflow.python.training import proximal_adagrad
 
 
 default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
+
+_OPTIMIZER_CLS_NAMES = {
+    'Adagrad': adagrad.AdagradOptimizer,
+    'Adam': adam.AdamOptimizer,
+    'Ftrl': ftrl.FtrlOptimizer,
+    'RMSProp': rmsprop.RMSPropOptimizer,
+    'SGD': gradient_descent.GradientDescentOptimizer,
+    'ProximalAdagrad': proximal_adagrad.ProximalAdagradOptimizer
+}
 
 
 def fixed_lenght_example(result, normalized_length=5500):
@@ -93,7 +108,7 @@ def get_class(result, class_label='status'):
         status = 0 if status in passed_statuses else 1
         return status
     else:
-        return None
+        return result[class_label]
 
 
 def normalize_example(result, normalized_length=5500, class_label='status'):
@@ -364,7 +379,7 @@ def dataset_split_filters(size, training, dev):
               help='Label that identifies the type of result for the dataset')
 @click.option('--tdt-split', nargs=3, type=int, default=(6, 2, 2),
               help='Trainig, dev and test dataset split - sum to 10')
-@click.option('--force', default=False,
+@click.option('--force/--no-force', default=False,
               help='When True, override existing dataset config')
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
@@ -490,16 +505,33 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
               help='A string that represents the number of layers and units')
 @click.option('--steps', default=30,
               help="Hyper param: max number of training steps")
-@click.option('--batch-size', default='1', help='Hyper param: Number of batches')
+@click.option('--batch-size', default='1',
+              help='Hyper param: Number of batches')
 @click.option('--epochs', default='1', help='Hyper param: Number of epochs')
+@click.option('--optimizer', default='Adagrad',
+              type=click.Choice(['Adagrad', 'Adam', 'Ftrl', 'RMSProp', 'SGD',
+                                 'ProximalAdagrad']),
+              help='Type of optimizer.')
+@click.option('--learning-rate', default=0.05, help='Learning rate')
+@click.option('--force/--no-force', default=False,
+              help='When True, override existing dataset config')
 def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
-                     batch_size, epochs):
+                     batch_size, epochs, optimizer, learning_rate, force):
+    """Define experiment parameters and hyper parameters
+
+    Supported optimizers:
+    * 'Adagrad': Returns an `AdagradOptimizer`.
+    * 'Adam': Returns an `AdamOptimizer`.
+    * 'Ftrl': Returns an `FtrlOptimizer`.
+    * 'RMSProp': Returns an `RMSPropOptimizer`.
+    * 'SGD': Returns a `GradientDescentOptimizer`.
+    """
     # Check that the dataset exists
     if not gather_results.load_model_config(dataset):
         print("Dataset %s not found" % dataset)
         sys.exit(1)
     # Prevent overwrite by mistake
-    if gather_results.load_experiment(dataset, experiment):
+    if gather_results.load_experiment(dataset, experiment) and not force:
         print("Experiment %s/%s already configured" % (dataset, experiment))
         sys.exit(1)
     params = {}
@@ -508,7 +540,9 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
         'batch_size': batch_size,
         'epochs': epochs,
         'hidden_units': [x for x in map(lambda x:int(x),
-                                        hidden_layers.split('/'))]
+                                        hidden_layers.split('/'))],
+        'optimizer': optimizer,
+        'learning_rate': learning_rate
     }
     experiment_data = {
         'estimator': estimator,
@@ -528,14 +562,18 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
               help="Name of the dataset folder.")
 @click.option('--experiment', default='experiment',
               help="Name of the experiment")
+@click.option('--eval-dataset', multiple=True, default=None,
+              help='Name of a dataset to be used for alternate evaluation')
 @click.option('--gpu', default=False, help='Force using gpu')
 @click.option('--debug/--no-debug', default=False)
-def local_trainer(dataset, experiment, gpu, debug):
+def local_trainer(dataset, experiment, eval_dataset, gpu, debug):
     # Load experiment data
     experiment_data = gather_results.load_experiment(dataset, experiment)
     if not experiment_data:
         print("Experiment %s in dataset %s not found" % (experiment, dataset))
         sys.exit(1)
+
+    dataset_data = gather_results.load_model_config(dataset)
 
     # Read hyper_params and params
     estimator = experiment_data['estimator']
@@ -544,6 +582,9 @@ def local_trainer(dataset, experiment, gpu, debug):
     steps = int(hyper_params['steps'])
     num_epochs = int(hyper_params['epochs'])
     batch_size = int(hyper_params['batch_size'])
+    optimizer = hyper_params['optimizer']
+    learning_rate = float(hyper_params['learning_rate'])
+    class_label = dataset_data['class_label']
 
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
@@ -555,41 +596,49 @@ def local_trainer(dataset, experiment, gpu, debug):
     training_data = gather_results.load_dataset(dataset, 'training')
     test_data = gather_results.load_dataset(dataset, 'test')
     print("Training data shape: (%d, %d)" % training_data['examples'].shape)
-    print("Evaluation data shape: (%d, %d)" % test_data['examples'].shape)
+
+    if class_label == 'node_provider':
+        label_vocabulary = set(['rax-iad', 'ovh-bhs1', 'packethost-us-west-1',
+                                'rax-dfw', 'vexxhost-ca-ymq-1', 'ovh-gra1',
+                                'limestone-regionone', 'inap-mtl01', 'rax-ord'])
+    else:
+        label_vocabulary = None
 
     # Get the estimator
     model_dir = gather_results.get_experiment_folder(dataset, experiment)
     estimator = tf_trainer.get_estimator(
-        estimator, hyper_params, params, labels, model_dir)
+        estimator, hyper_params, params, labels, model_dir,
+        optimizer=_OPTIMIZER_CLS_NAMES[optimizer](learning_rate=learning_rate),
+        label_vocabulary=label_vocabulary)
 
-    # Now do the training and evalutation
-    if gpu:
-        with tf.device('/device:GPU:0'):
-            # Training
-            tf_trainer.get_training_method(estimator)(
-                input_fn=tf_trainer.get_input_fn(shuffle=True,
-                    batch_size=batch_size, num_epochs=num_epochs,
-                    labels=labels, **training_data), steps=steps)
-            # Eval
-            eval_loss = estimator.evaluate(
-                input_fn=lambda: tf_trainer.get_input_fn(
-                    batch_size=batch_size, num_epochs=1,
-                    labels=labels, **test_data))
-    else:
-        # Training
+    def train_and_eval():
+        # Train
         tf_trainer.get_training_method(estimator)(
             input_fn=tf_trainer.get_input_fn(shuffle=True,
                 batch_size=batch_size, num_epochs=num_epochs,
                 labels=labels, **training_data), steps=steps)
-        # Eval
-        eval_loss = estimator.evaluate(
-            input_fn=tf_trainer.get_input_fn(
-                batch_size=batch_size, num_epochs=1,
-                labels=labels, **test_data))
-    # Saving and Logging loss
-    print('Training loss after eval %r' % eval_loss)
-    eval_name = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M") + "_eval"
-    gather_results.save_data_json(dataset, eval_loss, eval_name,
-                                  sub_folder=experiment)
-    gather_results.save_data_json(dataset, eval_loss, "eval",
-                                  sub_folder=experiment)
+        # Eval on the experiment dataset + any other requested
+        eval_sets = [dataset]
+        eval_sets.extend(eval_dataset)
+        for eval_dataset_name in eval_sets:
+            eval_data = gather_results.load_dataset(eval_dataset_name, 'test')
+            eval_size = len(eval_data['example_ids'])
+            print(
+                "Evaluation data shape: (%d, %d)" % eval_data['examples'].shape)
+            eval_loss = estimator.evaluate(
+                input_fn=tf_trainer.get_input_fn(
+                    batch_size=eval_size, num_epochs=1,
+                    labels=labels, **eval_data), name=eval_dataset_name)
+            # Saving and Logging loss
+            print('Training eval data for %s: %r' % (eval_dataset_name,
+                                                     eval_loss))
+            eval_name = "eval_" + eval_dataset_name
+            gather_results.save_data_json(dataset, eval_loss, eval_name,
+                                          sub_folder=experiment)
+
+    # Now do the training and evalutation
+    if gpu:
+        with tf.device('/device:GPU:0'):
+            eval_loss = train_and_eval()
+    else:
+        eval_loss = train_and_eval()
