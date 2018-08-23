@@ -13,3 +13,5 @@ tensorflow>=1.6.0 # Apache-2.0
 PyMySQL>=0.8.0
 click
 flask>=0.12.2
+# boto to support s3 based storage
+boto3
