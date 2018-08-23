@@ -19,11 +19,13 @@ import io
 import itertools
 import json
 import os
+import six
 import sys
 import warnings
 warnings.filterwarnings("ignore")
 
 
+import boto3
 import click
 import numpy as np
 import pandas as pd
@@ -37,6 +39,32 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
 
 now = datetime.datetime.utcnow()
+
+
+def get_s3_client(s3_profile, s3_url):
+    session = boto3.Session(profile_name=s3_profile)
+    client = session.client('s3', endpoint_url=s3_url)
+    return client
+
+def get_data_path(data_path=None, s3=None):
+    """Data path is a string"""
+    root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data']
+    if not data_path:
+        return root_list
+    # This probably won't work on Windows
+    data_path_list = data_path.split(os.sep)
+    if data_path_list[0] == 's3:':
+        try:
+            s3.create_bucket(Bucket=data_path_list[2])
+        except s3.exceptions.BucketAlreadyExists:
+            # Bucket already there, just continue
+            pass
+    elif data_path_list[0] != "":
+        # relative path, add base dir in front
+        data_path_list = root_list + data_path_list
+    else:
+        os.makedirs(os.sep.join(data_path_list), exist_ok=True)
+    return data_path_list
 
 
 def _parse_dstat_date(date_str):
@@ -69,7 +97,7 @@ def _parse_dstat_file(input_io, sample_interval=None):
 
 
 def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
-                    use_http=True, data_path=None):
+                    use_http=True, data_path=None, s3=None):
     """Obtains and parses a dstat file to a pd.DatetimeIndex
 
     Finds a dstat file in the local cache or downloads it from the
@@ -80,16 +108,34 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
              'controller/logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt',
              'logs/dstat-csv_log.txt.gz']
-    if not data_path:
-        raw_data_folder = [os.path.dirname(os.path.realpath(__file__)),
-                           os.pardir, 'data', '.raw']
+    raw_data_folder = get_data_path(data_path=data_path, s3=s3)
+    raw_data_folder.append('.raw')
+    use_s3 = (raw_data_folder[0] == 's3:')
+    stream_or_file = False
+    # Check if the data is cached locally or on s3
+    if not use_s3:
+        os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
+        raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
+        # If a cache is found, use it
+        if os.path.isfile(raw_data_file):
+            stream_or_file = lambda: raw_data_file
+            data_cleaner = lambda: os.remove(raw_data_file)
     else:
-        raw_data_folder = [data_path, 'data', '.raw']
-    os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
-    raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
-    if os.path.isfile(raw_data_file):
+        object_key = os.sep.join(raw_data_folder[3:] + [run_uuid + '.csv.gz'])
         try:
-            with gzip.open(raw_data_file, mode='r') as f:
+            s3.head_object(Bucket=raw_data_folder[2], Key=object_key)
+            stream_or_file = lambda: s3.get_object(
+                Bucket=raw_data_folder[2], Key=object_key)['Body']
+            data_cleaner = lambda: s3.delete_object(
+                Bucket=raw_data_folder[2], Key=object_key)
+        except s3.exceptions.ClientError:
+            # Not found, continue
+            pass
+
+    # If cached
+    if stream_or_file:
+        try:
+            with gzip.open(stream_or_file(), mode='r') as f:
                 try:
                     if use_http:
                         # When using remote let me know if loading from cache
@@ -101,7 +147,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                     os.remove(raw_data_file)
         except IOError as ioe:
             # Something went wrong opening the file, so we won't load this run.
-            print('Run %s found in the local dataset, however: %s',
+            print('Run %s found in the dataset, however: %s',
                   (run_uuid, ioe))
             return None
 
@@ -119,8 +165,12 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         if resp.status_code == 404:
             continue
         # Cache the file locally
-        with gzip.open(raw_data_file, mode='wb') as local_cache:
-            local_cache.write(resp.text.encode())
+        if use_s3:
+            s3.put_object(Bucket=raw_data_folder[2], Key=object_key,
+                          Body=gzip.compress(resp.text.encode()))
+        else:
+            with gzip.open(raw_data_file, mode='wb') as local_cache:
+                local_cache.write(resp.text.encode())
         print("%s: dstat cached from URL" % run_uuid)
         # And return the parse dstat
         f = io.StringIO(resp.text)
@@ -135,30 +185,43 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         return None
 
 
-def _get_result_for_run(run, session, use_cache=True, use_db=True,
-                        get_tests=False, data_path=None):
+def _get_result_for_run(run, session, use_db=True, get_tests=False,
+                        data_path=None, s3=None):
     # First try to get the data from disk
-    if not data_path:
-        metadata_folder = [os.path.dirname(os.path.realpath(__file__)),
-                           os.pardir, 'data', '.metadata']
+    metadata_folder = get_data_path(data_path=data_path, s3=s3)
+    metadata_folder.append('.metadata')
+    use_s3 = (metadata_folder[0] == 's3:')
+    stream_or_file = False
+    if use_s3:
+        object_key = os.sep.join(metadata_folder[3:] + [run.uuid + '.json.gz'])
+        try:
+            s3.head_object(Bucket=metadata_folder[2], Key=object_key)
+            stream_or_file = lambda: s3.get_object(
+                Bucket=metadata_folder[2], Key=object_key)['Body']
+        except s3.exceptions.ClientError:
+            # Not found, continue
+            pass
     else:
-        metadata_folder = [data_path, 'data', '.metadata']
-    os.makedirs(os.sep.join(metadata_folder), exist_ok=True)
-    result_file = os.sep.join(metadata_folder + [run.uuid + '.json.gz'])
-    if use_cache:
+        os.makedirs(os.sep.join(metadata_folder), exist_ok=True)
+        result_file = os.sep.join(metadata_folder + [run.uuid + '.json.gz'])
         if os.path.isfile(result_file):
-            try:
+            stream_or_file = lambda: result_file
+
+    # If cached
+    if stream_or_file:
+        try:
+            with gzip.open(stream_or_file(), mode='r') as f:
                 if use_db:
                     # When using remote let me know if loading from cache
                     print("%s: metadata found in cache" % run.uuid)
-                with gzip.open(result_file, mode='r') as f:
-                    return json.loads(f.read())
-            except IOError as ioe:
-                # Something went wrong opening the file, so we won't load
-                # this run.
-                print('Run %s found in the local dataset, however: %s',
-                      (run.uuid, ioe))
-                return None
+                return json.loads(f.read())
+        except IOError as ioe:
+            # Something went wrong opening the file, so we won't load
+            # this run.
+            print('Run %s found in the dataset, however: %s',
+                  (run.uuid, ioe))
+            return None
+
     # If no local cache, and use_db is False, return nothing
     if not use_db:
         print("No local data for %s, use_db set to false" % run.uuid)
@@ -195,8 +258,12 @@ def _get_result_for_run(run, session, use_cache=True, use_db=True,
         result[md['key']] = md['value']
 
     # Cache the json file, without tests
-    with gzip.open(result_file, mode='wb') as local_cache:
-        local_cache.write(json.dumps(result).encode())
+    if use_s3:
+        s3.put_object(Bucket=metadata_folder[2], Key=object_key,
+                      Body=gzip.compress(json.dumps(result).encode()))
+    else:
+        with gzip.open(result_file, mode='wb') as local_cache:
+            local_cache.write(json.dumps(result).encode())
     print("%s: metadata cached from URL" % run.uuid)
 
     # Adding the tests after caching
@@ -205,27 +272,26 @@ def _get_result_for_run(run, session, use_cache=True, use_db=True,
     return result
 
 
-def _get_data_for_run(run, sample_interval, session=None, use_cache=True,
-                      use_remote=True, data_path=None):
+def _get_data_for_run(run, sample_interval, session=None,
+                      use_remote=True, data_path=None, s3=None):
     # First ensure we can get dstat data
     dstat = _get_dstat_file(run.artifacts, run.uuid, sample_interval,
-                            use_http=use_remote, data_path=data_path)
+                            use_http=use_remote, data_path=data_path, s3=s3)
     if dstat is None:
         return None
-    result = _get_result_for_run(run, session, use_cache,
-                                 use_db=use_remote, data_path=data_path)
+    result = _get_result_for_run(run, session, use_db=use_remote,
+                                 data_path=data_path, s3=s3)
     result['dstat'] = dstat
     return result
 
 def _get_local_data_for_run_id(run_id, sample_interval, data_path=None):
     Run = collections.namedtuple('Run', ['uuid', 'artifacts'])
     return _get_data_for_run(Run(uuid=run_id, artifacts=None), sample_interval,
-                             session=None, use_cache=True, use_remote=False,
+                             session=None, use_remote=False,
                              data_path=data_path)
 
 def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
-                        build_name='tempest-full', use_cache=True,
-                        data_path=None):
+                        build_name='tempest-full', data_path=None):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -245,7 +311,7 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
         # NOTE(mtreinish): Only be concerned with single node to start
         if 'multinode' in db_build_name:
             continue
-        result = _get_data_for_run(run, sample_interval, session, use_cache,
+        result = _get_data_for_run(run, sample_interval, session,
                                    data_path=data_path)
         if result:
             results.append(result)
@@ -259,12 +325,19 @@ def get_subunit_results_for_run(run_id, sample_interval, data_path=None):
                                       data_path=data_path)
 
 def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
-                                      session=None, data_path=None):
+                                      session=None, data_path=None,
+                                      s3_profile=None, s3_url=None):
+    # If the data is stored in an S3 bucket, create an s3 client
+    if data_path and data_path.startswith("s3://"):
+        s3 = get_s3_client(s3_profile, s3_url)
+    else:
+        s3 = None
     # Download and cache dstat and metadata for a list of runs
-    # This allows re-using a session
     no_data_runs = set(
-        load_run_uuids(".raw", name="unavailable", data_path=data_path) or [])
+        load_run_uuids(".raw", name="unavailable",
+                       data_path=data_path, s3=s3) or [])
     data_runs = set([])
+    # This allows re-using a session
     if db_uri:
         # When running from a local set the db_uri is not going to be set
         engine = create_engine(db_uri)
@@ -275,14 +348,15 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
     for count, run in enumerate(runs):
         if count % 100 == 0:
             # Every 100 runs save to disk so we can restore interrupted jobs.
-            save_run_uuids(".unavailable", no_data_runs, data_path=data_path)
+            save_run_uuids(".unavailable", no_data_runs, data_path=data_path,
+                           s3=s3)
         if len(data_runs) == limit and limit != 0:
             return data_runs
         if run.uuid in no_data_runs:
             print("%s: ignored by configuration" % run.uuid)
             continue
         result = _get_data_for_run(run, sample_interval, session,
-                                   use_cache=True, data_path=data_path)
+                                   data_path=data_path, s3=s3)
         if result:
             data_runs.add(run.uuid)
             print('%d[%s]: Data found' % (count, run.uuid))
@@ -290,7 +364,7 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
             no_data_runs.add(run.uuid)
             print('%d[%s]: No data' % (count, run.uuid))
     save_run_uuids(".raw", no_data_runs, name="unavailable",
-                   data_path=data_path)
+                   data_path=data_path, s3=s3)
     return data_runs
 
 
@@ -308,25 +382,21 @@ def get_runs_by_name(db_uri, build_name, session=None):
     return full_out
 
 
-def get_data_json_folder_list(dataset, sub_folder=None, data_path=None):
-    if not data_path:
-        dataset_folder = [os.path.dirname(os.path.realpath(__file__)),
-                          os.pardir]
-    else:
-        dataset_folder = [data_path]
-    dataset_folder.extend(['data', dataset])
+def get_data_json_folder_list(dataset, sub_folder=None, data_path=None,
+                              s3=None):
+    dataset_folder = get_data_path(data_path=data_path, s3=s3)
+    dataset_folder.append(dataset)
     if sub_folder:
         dataset_folder.append(sub_folder)
     return dataset_folder
 
 def get_data_json_folder(dataset, sub_folder=None, data_path=None):
-    return os.sep.join(get_data_json_folder_list(dataset,
-                                                 sub_folder=sub_folder,
-                                                 data_path=data_path))
+    return os.sep.join(get_data_json_folder_list(
+        dataset, sub_folder=sub_folder, data_path=data_path, s3=s3))
 
-def save_data_json(dataset, data, name, sub_folder=None, data_path=None):
-    """Save a JSON serializable object to disk
-    """
+def save_data_json(dataset, data, name, sub_folder=None, data_path=None,
+                   s3=None):
+    """Save a JSON serializable object to disk"""
 
     # Courtesy of [fangyh]
     class MyEncoder(json.JSONEncoder):
@@ -342,35 +412,55 @@ def save_data_json(dataset, data, name, sub_folder=None, data_path=None):
 
     dataset_folder = get_data_json_folder_list(dataset,
                                                sub_folder=sub_folder,
-                                               data_path=data_path)
-    os.makedirs(os.sep.join(dataset_folder), exist_ok=True)
+                                               data_path=data_path, s3=s3)
+
+    # If it's a file, ensure the containing subfolder exists
+    if dataset_folder[0] != 's3:':
+        os.makedirs(os.sep.join(dataset_folder), exist_ok=True)
     dataset_folder.append(name + '.json.gz')
-    full_filename = os.sep.join(dataset_folder)
-    with gzip.open(full_filename, mode='wb') as local_cache:
-        local_cache.write(json.dumps(data, cls=MyEncoder).encode())
+
+    serialized_data = json.dumps(data, cls=MyEncoder).encode()
+    # For s3 the bucket is the string after s3://
+    if dataset_folder[0] == 's3:':
+        object_key = os.sep.join(dataset_folder[3:])
+        s3.put_object(Bucket=dataset_folder[2], Key=object_key,
+                      Body=gzip.compress(serialized_data))
+    else:
+        full_filename = os.sep.join(dataset_folder)
+        with gzip.open(full_filename, mode='wb') as local_cache:
+            local_cache.write(serialized_data)
 
 
 def load_data_json(dataset, name, ignore_error=False, sub_folder=None,
-                   data_path=None):
+                   data_path=None, s3=None):
     """Load a JSON serializable object from disk
     """
     dataset_folder = get_data_json_folder_list(dataset,
                                                sub_folder=sub_folder,
-                                               data_path=data_path)
+                                               data_path=data_path, s3=s3)
     dataset_folder.append(name + '.json.gz')
-    full_filename = os.sep.join(dataset_folder)
-
-    if os.path.isfile(full_filename):
-        try:
-            with gzip.open(full_filename, mode='r') as f:
-                return json.load(f)
-        except IOError as ioe:
-            # Ignore error
-            if ignore_error:
-                print('Ignore error when loading: %s', ioe)
-                return None
-            else:
-                raise
+    # For s3 the bucket is the string after s3://
+    if dataset_folder[0] == 's3:':
+        object_key = os.sep.join(dataset_folder[3:])
+        stream_or_file = lambda: s3.get_object(Bucket=dataset_folder[2],
+                                               Key=object_key)['Body']
+    else:
+        stream_or_file = lambda: os.sep.join(dataset_folder)
+    # Unzip object stream or local file
+    try:
+        with gzip.open(stream_or_file(), mode='r') as f:
+            return json.load(f)
+    except s3.exceptions.NoSuchKey:
+        return None
+    except FileNotFoundError:
+        return None
+    except IOError as ioe:
+        # Ignore error
+        if ignore_error:
+            print('Ignore error when loading: %s', ioe)
+            return None
+        else:
+            raise
 
 
 def load_model_config(dataset, data_path=None):
@@ -381,16 +471,16 @@ def save_model_config(dataset, model_config, data_path=None):
     save_data_json(dataset, model_config, 'model_config', data_path=data_path)
 
 
-def load_run_uuids(dataset, name='runs', data_path=None):
+def load_run_uuids(dataset, name='runs', data_path=None, s3=None):
     """Return a list of run uuids for a specific dataset_name
 
     Read the list of run uuids from file and return a list of run uuids.
     """
-    return load_data_json(dataset, name, data_path=data_path)
+    return load_data_json(dataset, name, data_path=data_path, s3=s3)
 
 
-def save_run_uuids(dataset, run_uuids, name='runs', data_path=None):
-    save_data_json(dataset, list(run_uuids), name, data_path=data_path)
+def save_run_uuids(dataset, run_uuids, name='runs', data_path=None, s3=None):
+    save_data_json(dataset, list(run_uuids), name, data_path=data_path, s3=s3)
 
 
 def load_experiment(dataset, name, data_path=None):
@@ -430,11 +520,19 @@ def save_dataset(dataset, name, data_path=None, **kwargs):
 @click.option('--build-name', default="tempest-full", help="Build name.")
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
 @click.option('--limit', default=0, help="Maximum number of entries")
-def cache_data(build_name, db_uri, limit):
+@click.option('--data-path', default=None,
+              help="Path to the data, local or in the s3://<bucket> format")
+@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-url',
+              default='https://s3.eu-geo.objectstorage.softlayer.net',
+              help='Endpoint URL for the s3 storage')
+def cache_data(build_name, db_uri, limit, data_path, s3_profile, s3_url):
     runs = get_runs_by_name(db_uri, build_name=build_name)
     print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
     limit_runs = gather_and_cache_results_for_runs(
-        runs, limit, '1s', db_uri)
-    save_run_uuids('.raw', limit_runs, name=build_name)
+        runs, limit, '1s', db_uri, data_path=data_path,
+        s3_profile=s3_profile, s3_url=s3_url)
+    save_run_uuids('.raw', limit_runs, name=build_name, data_path=data_path,
+                   s3=get_s3_client(s3_profile, s3_url))
     print("Stored %d run IDs in .raw for build name %s" % (
         len(limit_runs), build_name))
