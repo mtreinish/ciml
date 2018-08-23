@@ -63,10 +63,10 @@ def db_predict(db_uri, dataset, sample_interval, build_name, debug,
 @click.option('--db-uri', default=default_db_uri, help="DB URI")
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
-@click.option('--limit', default=0, help="Maximum number of entries")
+@click.option('--slice', default=":", help="Slice of the dataset")
 @click.option('--gpu', default=False, help='Force using gpu')
 @click.option('--debug/--no-debug', default=False)
-def db_batch_predict(db_uri, dataset, limit, gpu, debug):
+def db_batch_predict(db_uri, dataset, slice, gpu, debug):
     """Run predict on all DB items on included in the dataset yet
 
     Takes a dataset and a build name. It builds the list of runs in the DB
@@ -84,7 +84,7 @@ def db_batch_predict(db_uri, dataset, limit, gpu, debug):
         db_uri=db_uri, build_name=model_config['build_name'])
     # Run a predict loop, include all runs not in the train dataset
     predict_runs = [r for r in runs if r.uuid not in run_uuids]
-    predict_runs = predict_runs[:limit]
+    predict_runs = predict_runs[]
     if len(predict_runs) == 0:
         print("Empty prediction set, nothing to do.")
         sys.exit(0)

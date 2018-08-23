@@ -22,18 +22,25 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 
 def get_feature_columns(labels):
-    return [tf.contrib.layers.real_valued_column(x) for x in labels]
+    return [tf.feature_column.numeric_column(x) for x in labels]
 
 
-def input_fn(examples, example_ids, classes, labels):
-    feature_columns = get_feature_columns(labels)
-    num_features = len(labels)
+def get_input_fn(examples, example_ids, classes, labels,
+                 shuffle=False, batch_size=None, num_epochs=None):
+    """Generate an input_fn to feed the estimator
+
+    Input: examples, classes, labels, batch size, num epochs
+    Output: a function that emits data for the estimator
+    """
+    _numpy_input_fn = tf.estimator.inputs.numpy_input_fn
     # Dict comprehension to build a dict of features
     # I suppose numpy might be able to do this more efficiently
     _features = {
-        labels[n]: tf.constant(examples[:,n]) for n in range(num_features)}
-    # _features['example_id'] = tf.constant(example_ids)
-    return _features, tf.constant(classes)
+        labels[n]: examples[:,n] for n in range(len(labels))}
+    params = {}
+    if batch_size: params['batch_size'] = batch_size
+    if num_epochs: params['num_epochs'] = num_epochs
+    return _numpy_input_fn(_features, classes, shuffle=shuffle, **params)
 
 
 def get_checkpoint_config():
@@ -42,24 +49,37 @@ def get_checkpoint_config():
         keep_checkpoint_max = 100,   # Retain the 100 most recent checkpoints.
     )
 
-def get_estimator(estimator_name, hyper_params, params, labels, model_dir):
+def get_estimator(estimator_name, hyper_params, params, labels, model_dir,
+                  optimizer=None, label_vocabulary=None):
 
+    estimator_params = {}
+    if optimizer:
+        estimator_params['optimizer'] = optimizer
+
+    # If no vocabulary is passed, we assume 2 classes with 0 and 1 values
+    estimator_params['n_classes'] = 2
+    if label_vocabulary:
+        estimator_params['n_classes'] = len(label_vocabulary)
+        estimator_params['label_vocabulary'] = list(label_vocabulary)
     # SVM Model
     if estimator_name == 'tf.contrib.learn.SVM':
         return tf.contrib.learn.SVM(
             feature_columns=get_feature_columns(labels),
             example_id_column='example_id',
             model_dir=model_dir,
-            config=get_checkpoint_config())
+            config=get_checkpoint_config(),
+            **estimator_params)
 
     # DNN Model
     if estimator_name == 'tf.estimator.DNNClassifier':
-        return tf.estimator.DNNClassifier(
+        estimator = tf.estimator.DNNClassifier(
             feature_columns=get_feature_columns(labels),
             model_dir=model_dir,
             config=get_checkpoint_config(),
             hidden_units=hyper_params['hidden_units'],
-            n_classes=2)
+            **estimator_params)
+        return estimator
+
 
 def get_training_method(estimator):
     if type(estimator).__name__ == 'SVM':
