@@ -21,6 +21,7 @@ import json
 import os
 import six
 import sys
+import tempfile
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -41,11 +42,20 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 now = datetime.datetime.utcnow()
 
 
-def get_s3_client(s3_profile=None, s3_url=None):
+def get_s3_client(s3_profile=None, s3_url=None, s3_access_key_id=None,
+                  s3_secret_access_key=None):
+    """Get an s3 client by different means
+
+    If a profile name is specified, it's used. Else we look for access_key
+    ID and secret. If a URL is passed it's used, else the default AWS is used.
+    """
     session_kwargs = {}
     client_kwargs = {}
     if s3_profile:
         session_kwargs['profile_name'] = s3_profile
+    elif s3_access_key_id and s3_secret_access_key:
+        session_kwargs['aws_access_key_id'] = s3_access_key_id
+        session_kwargs['aws_secret_access_key'] = s3_secret_access_key
     if s3_url:
         client_kwargs['endpoint_url'] = s3_url
     session = boto3.Session(**session_kwargs)
@@ -54,9 +64,13 @@ def get_s3_client(s3_profile=None, s3_url=None):
 
 def get_data_path(data_path=None, s3=None):
     """Data path is a string"""
-    root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data']
     if not data_path:
-        return root_list
+        try:
+            return [os.path.dirname(os.path.realpath(__file__)),
+                    os.pardir, 'data']
+        except NameError:
+            # Running an interactive python, __file__ is not defined
+            return tempfile.mkdtemp(prefix='ciml').split(os.sep)
     # This probably won't work on Windows
     data_path_list = data_path.split(os.sep)
     if data_path_list[0] == 's3:':
@@ -336,13 +350,16 @@ def get_subunit_results_for_run(run_id, sample_interval, data_path=None,
     return _get_cached_data_for_run_id(run_id, sample_interval,
                                       data_path=data_path, s3=s3)
 
-def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
-                                      session=None, data_path=None, s3=None):
+def gather_and_cache_results_for_runs(runs, build_name, limit, sample_interval,
+                                      db_uri=None, session=None, data_path=None,
+                                      s3=None):
     # Download and cache dstat and metadata for a list of runs
     no_data_runs = set(
         load_run_uuids(".raw", name="unavailable",
                        data_path=data_path, s3=s3) or [])
-    data_runs = set([])
+    data_runs = set(
+        load_run_uuids(".raw", name=build_name,
+                       data_path=data_path, s3=s3) or [])
     # This allows re-using a session
     if db_uri:
         # When running from a local set the db_uri is not going to be set
@@ -354,12 +371,18 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
     for count, run in enumerate(runs):
         if count % 100 == 0:
             # Every 100 runs save to disk so we can restore interrupted jobs.
-            save_run_uuids(".unavailable", no_data_runs, data_path=data_path,
-                           s3=s3)
+            save_run_uuids(".raw", no_data_runs, name="unavailable",
+                           data_path=data_path, s3=s3)
+            save_run_uuids(".raw", data_runs, name=build_name,
+                           data_path=data_path, s3=s3)
+            print("Check-point, saved to storage %d" % len(data_runs))
         if len(data_runs) == limit and limit != 0:
             return data_runs
         if run.uuid in no_data_runs:
             print("%s: ignored by configuration" % run.uuid)
+            continue
+        if run.uuid in data_runs:
+            print("%s: already cached" % run.uuid)
             continue
         result = _get_data_for_run(run, sample_interval, session,
                                    data_path=data_path, s3=s3)
@@ -371,6 +394,10 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
             print('%d[%s]: No data' % (count, run.uuid))
     save_run_uuids(".raw", no_data_runs, name="unavailable",
                    data_path=data_path, s3=s3)
+    save_run_uuids(".raw", data_runs, name=build_name,
+                   data_path=data_path, s3=s3)
+    print("Stored %d run IDs in .raw for build name %s" % (
+        len(data_runs), build_name))
     return data_runs
 
 
@@ -535,12 +562,34 @@ def save_dataset(dataset, name, data_path=None, **kwargs):
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
 def cache_data(build_name, db_uri, limit, data_path, s3_profile, s3_url):
+    cache_data_function(build_name, db_uri, limit, data_path, s3_profile,
+                        s3_url)
+
+
+def cache_data_function(build_name, db_uri, limit=0, data_path=None,
+                        s3_profile=None, s3_url=None, s3_access_key_id=None,
+                        s3_secret_access_key=None):
     runs = get_runs_by_name(db_uri, build_name=build_name)
     print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
+    s3=get_s3_client(s3_url=s3_url,s3_profile=s3_profile,
+                     s3_access_key_id=s3_access_key_id,
+                     s3_secret_access_key=s3_secret_access_key)
     limit_runs = gather_and_cache_results_for_runs(
-        runs, limit, '1s', db_uri, data_path=data_path,
-        s3=get_s3_client(s3_url=s3_url,s3_profile=s3_profile))
-    save_run_uuids('.raw', limit_runs, name=build_name, data_path=data_path,
-                   s3=get_s3_client(s3_profile, s3_url))
-    print("Stored %d run IDs in .raw for build name %s" % (
-        len(limit_runs), build_name))
+        runs, build_name, limit, '1s', db_uri, data_path=data_path, s3=s3)
+    return {
+        'build_name': build_name,
+        'num_examples': len(limit_runs),
+        'data_path': data_path,
+        's3_url': s3_url
+    }
+
+
+def main(args):
+    """Main function for invocation via action"""
+    try:
+        cache_data_function(db_uri=default_db_uri, limit=0, **args)
+    except Exception as e:
+        print(e)
+    finally:
+        # Ensure we always return a dict, even on failure
+        return args
