@@ -586,6 +586,7 @@ def cache_data_function(build_name, db_uri, limit=0, data_path=None,
 
 def main(args):
     """Main function for invocation via action"""
+    del args['payload']
     try:
         cache_data_function(db_uri=default_db_uri, limit=0, **args)
     except Exception as e:
