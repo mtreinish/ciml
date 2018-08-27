@@ -21,6 +21,7 @@ import json
 import os
 import six
 import sys
+import tempfile
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -41,16 +42,35 @@ default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
 now = datetime.datetime.utcnow()
 
 
-def get_s3_client(s3_profile, s3_url):
-    session = boto3.Session(profile_name=s3_profile)
-    client = session.client('s3', endpoint_url=s3_url)
-    return client
+def get_s3_client(s3_profile=None, s3_url=None, s3_access_key_id=None,
+                  s3_secret_access_key=None):
+    """Get an s3 client by different means
+
+    If a profile name is specified, it's used. Else we look for access_key
+    ID and secret. If a URL is passed it's used, else the default AWS is used.
+    """
+    session_kwargs = {}
+    client_kwargs = {}
+    if s3_profile:
+        session_kwargs['profile_name'] = s3_profile
+    elif s3_access_key_id and s3_secret_access_key:
+        session_kwargs['aws_access_key_id'] = s3_access_key_id
+        session_kwargs['aws_secret_access_key'] = s3_secret_access_key
+    if s3_url:
+        client_kwargs['endpoint_url'] = s3_url
+    session = boto3.Session(**session_kwargs)
+    return session.client('s3', **client_kwargs)
+
 
 def get_data_path(data_path=None, s3=None):
     """Data path is a string"""
-    root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir, 'data']
     if not data_path:
-        return root_list
+        try:
+            return [os.path.dirname(os.path.realpath(__file__)),
+                    os.pardir, 'data']
+        except NameError:
+            # Running an interactive python, __file__ is not defined
+            return tempfile.mkdtemp(prefix='ciml').split(os.sep)
     # This probably won't work on Windows
     data_path_list = data_path.split(os.sep)
     if data_path_list[0] == 's3:':
@@ -112,6 +132,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
     raw_data_folder.append('.raw')
     use_s3 = (raw_data_folder[0] == 's3:')
     stream_or_file = False
+    # If s3 is None, get a vanilla s3 client just for the exceptions
+    s3 = s3 or get_s3_client()
     # Check if the data is cached locally or on s3
     if not use_s3:
         os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
@@ -192,6 +214,8 @@ def _get_result_for_run(run, session, use_db=True, get_tests=False,
     metadata_folder.append('.metadata')
     use_s3 = (metadata_folder[0] == 's3:')
     stream_or_file = False
+    # If s3 is None, get a vanilla s3 client just for the exceptions
+    s3 = s3 or get_s3_client()
     if use_s3:
         object_key = os.sep.join(metadata_folder[3:] + [run.uuid + '.json.gz'])
         try:
@@ -284,14 +308,15 @@ def _get_data_for_run(run, sample_interval, session=None,
     result['dstat'] = dstat
     return result
 
-def _get_local_data_for_run_id(run_id, sample_interval, data_path=None):
+def _get_cached_data_for_run_id(run_id, sample_interval, data_path=None,
+                                s3=None):
     Run = collections.namedtuple('Run', ['uuid', 'artifacts'])
     return _get_data_for_run(Run(uuid=run_id, artifacts=None), sample_interval,
                              session=None, use_remote=False,
-                             data_path=data_path)
+                             data_path=data_path, s3=s3)
 
 def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
-                        build_name='tempest-full', data_path=None):
+                        build_name='tempest-full', data_path=None, s3=None):
     engine = create_engine(db_uri)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -312,31 +337,29 @@ def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
         if 'multinode' in db_build_name:
             continue
         result = _get_data_for_run(run, sample_interval, session,
-                                   data_path=data_path)
+                                   data_path=data_path, s3=s3)
         if result:
             results.append(result)
     session.close()
     return results
 
 
-def get_subunit_results_for_run(run_id, sample_interval, data_path=None):
+def get_subunit_results_for_run(run_id, sample_interval, data_path=None,
+                                s3=None):
     """Get data for run from cache only"""
-    return _get_local_data_for_run_id(run_id, sample_interval,
-                                      data_path=data_path)
+    return _get_cached_data_for_run_id(run_id, sample_interval,
+                                      data_path=data_path, s3=s3)
 
-def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
-                                      session=None, data_path=None,
-                                      s3_profile=None, s3_url=None):
-    # If the data is stored in an S3 bucket, create an s3 client
-    if data_path and data_path.startswith("s3://"):
-        s3 = get_s3_client(s3_profile, s3_url)
-    else:
-        s3 = None
+def gather_and_cache_results_for_runs(runs, build_name, limit, sample_interval,
+                                      db_uri=None, session=None, data_path=None,
+                                      s3=None):
     # Download and cache dstat and metadata for a list of runs
     no_data_runs = set(
         load_run_uuids(".raw", name="unavailable",
                        data_path=data_path, s3=s3) or [])
-    data_runs = set([])
+    data_runs = set(
+        load_run_uuids(".raw", name=build_name,
+                       data_path=data_path, s3=s3) or [])
     # This allows re-using a session
     if db_uri:
         # When running from a local set the db_uri is not going to be set
@@ -348,12 +371,18 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
     for count, run in enumerate(runs):
         if count % 100 == 0:
             # Every 100 runs save to disk so we can restore interrupted jobs.
-            save_run_uuids(".unavailable", no_data_runs, data_path=data_path,
-                           s3=s3)
+            save_run_uuids(".raw", no_data_runs, name="unavailable",
+                           data_path=data_path, s3=s3)
+            save_run_uuids(".raw", data_runs, name=build_name,
+                           data_path=data_path, s3=s3)
+            print("Check-point, saved to storage %d" % len(data_runs))
         if len(data_runs) == limit and limit != 0:
             return data_runs
         if run.uuid in no_data_runs:
             print("%s: ignored by configuration" % run.uuid)
+            continue
+        if run.uuid in data_runs:
+            print("%s: already cached" % run.uuid)
             continue
         result = _get_data_for_run(run, sample_interval, session,
                                    data_path=data_path, s3=s3)
@@ -365,6 +394,10 @@ def gather_and_cache_results_for_runs(runs, limit, sample_interval, db_uri=None,
             print('%d[%s]: No data' % (count, run.uuid))
     save_run_uuids(".raw", no_data_runs, name="unavailable",
                    data_path=data_path, s3=s3)
+    save_run_uuids(".raw", data_runs, name=build_name,
+                   data_path=data_path, s3=s3)
+    print("Stored %d run IDs in .raw for build name %s" % (
+        len(data_runs), build_name))
     return data_runs
 
 
@@ -390,7 +423,8 @@ def get_data_json_folder_list(dataset, sub_folder=None, data_path=None,
         dataset_folder.append(sub_folder)
     return dataset_folder
 
-def get_data_json_folder(dataset, sub_folder=None, data_path=None):
+def get_data_json_folder(dataset, sub_folder=None, data_path=None,
+                         s3=None):
     return os.sep.join(get_data_json_folder_list(
         dataset, sub_folder=sub_folder, data_path=data_path, s3=s3))
 
@@ -433,8 +467,9 @@ def save_data_json(dataset, data, name, sub_folder=None, data_path=None,
 
 def load_data_json(dataset, name, ignore_error=False, sub_folder=None,
                    data_path=None, s3=None):
-    """Load a JSON serializable object from disk
-    """
+    """Load a JSON serializable object from disk"""
+    # If s3 is None, get a vanilla s3 client just for the exceptions
+    s3 = s3 or get_s3_client()
     dataset_folder = get_data_json_folder_list(dataset,
                                                sub_folder=sub_folder,
                                                data_path=data_path, s3=s3)
@@ -494,7 +529,7 @@ def save_experiment(dataset, experiment, name, data_path=None):
 
 
 def get_experiment_folder(dataset, name, data_path=None):
-    return get_data_json_folder(dataset, sub_folder=name)
+    return get_data_json_folder(dataset, sub_folder=name, data_path=data_path)
 
 
 def load_dataset(dataset, name, data_path=None):
@@ -527,12 +562,35 @@ def save_dataset(dataset, name, data_path=None, **kwargs):
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
 def cache_data(build_name, db_uri, limit, data_path, s3_profile, s3_url):
+    cache_data_function(build_name, db_uri, limit, data_path, s3_profile,
+                        s3_url)
+
+
+def cache_data_function(build_name, db_uri, limit=0, data_path=None,
+                        s3_profile=None, s3_url=None, s3_access_key_id=None,
+                        s3_secret_access_key=None):
     runs = get_runs_by_name(db_uri, build_name=build_name)
     print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
+    s3=get_s3_client(s3_url=s3_url,s3_profile=s3_profile,
+                     s3_access_key_id=s3_access_key_id,
+                     s3_secret_access_key=s3_secret_access_key)
     limit_runs = gather_and_cache_results_for_runs(
-        runs, limit, '1s', db_uri, data_path=data_path,
-        s3_profile=s3_profile, s3_url=s3_url)
-    save_run_uuids('.raw', limit_runs, name=build_name, data_path=data_path,
-                   s3=get_s3_client(s3_profile, s3_url))
-    print("Stored %d run IDs in .raw for build name %s" % (
-        len(limit_runs), build_name))
+        runs, build_name, limit, '1s', db_uri, data_path=data_path, s3=s3)
+    return {
+        'build_name': build_name,
+        'num_examples': len(limit_runs),
+        'data_path': data_path,
+        's3_url': s3_url
+    }
+
+
+def main(args):
+    """Main function for invocation via action"""
+    del args['payload']
+    try:
+        cache_data_function(db_uri=default_db_uri, limit=0, **args)
+    except Exception as e:
+        print(e)
+    finally:
+        # Ensure we always return a dict, even on failure
+        return args

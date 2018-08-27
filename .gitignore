@@ -57,3 +57,6 @@ ChangeLog
 # Dataset files
 data/*
 !data/.keep
+
+# Actions
+actions/cache-data/__main__.py
