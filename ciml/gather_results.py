@@ -498,12 +498,14 @@ def load_data_json(dataset, name, ignore_error=False, sub_folder=None,
             raise
 
 
-def load_model_config(dataset, data_path=None):
-    return load_data_json(dataset, 'model_config', data_path=data_path)
+def load_model_config(dataset, data_path=None, s3=None):
+    return load_data_json(dataset, 'model_config', data_path=data_path,
+                          s3=s3)
 
 
-def save_model_config(dataset, model_config, data_path=None):
-    save_data_json(dataset, model_config, 'model_config', data_path=data_path)
+def save_model_config(dataset, model_config, data_path=None, s3=None):
+    save_data_json(dataset, model_config, 'model_config', data_path=data_path,
+                   s3=s3)
 
 
 def load_run_uuids(dataset, name='runs', data_path=None, s3=None):
@@ -532,23 +534,48 @@ def get_experiment_folder(dataset, name, data_path=None):
     return get_data_json_folder(dataset, sub_folder=name, data_path=data_path)
 
 
-def load_dataset(dataset, name, data_path=None):
-    if not data_path:
-        dataset_file = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
+def load_dataset(dataset, name, data_path=None, s3=None):
+    dataset_file = get_data_path(data_path=data_path, s3=s3)
+    dataset_file.append(dataset)
+    use_s3 = (dataset_file[0] == 's3:')
+
+    if use_s3:
+        # Download as a file first. Not that efficient, but we avoid having
+        # to keep the whole dataset in memory.
+        object_key = os.sep.join(dataset_file[3:] + [name + '.npz'])
+        _, target_filename = tempfile.mkstemp(prefix=None, suffix='.npz')
+        s3.download_file(Bucket=dataset_file[2], Key=object_key,
+                         Filename=target_filename)
     else:
-        dataset_file = [data_path]
-    dataset_file.extend(['data', dataset, name + '.npz'])
-    with np.load(os.sep.join(dataset_file)) as numpy_dataset:
-        return {f: numpy_dataset[f] for f in numpy_dataset.files}
+        target_filename = os.sep.join(dataset_file + [name + '.npz'])
+
+    with np.load(target_filename) as numpy_dataset:
+        result = {f: numpy_dataset[f] for f in numpy_dataset.files}
+
+    if use_s3:
+        os.remove(target_filename)
+
+    return result
 
 
-def save_dataset(dataset, name, data_path=None, **kwargs):
-    if not data_path:
-        dataset_file = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
+def save_dataset(dataset, name, data_path=None, s3=None, **kwargs):
+    dataset_file = get_data_path(data_path=data_path, s3=s3)
+    dataset_file.append(dataset)
+    use_s3 = (dataset_file[0] == 's3:')
+
+    if use_s3:
+        _, target_filename = tempfile.mkstemp(prefix=None, suffix='.npz')
     else:
-        dataset_file = [data_path]
-    dataset_file.extend(['data', dataset, name])
-    np.savez_compressed(os.sep.join(dataset_file), **kwargs)
+        target_filename = os.sep.join(dataset_file)
+    np.savez_compressed(target_filename, **kwargs)
+
+    if use_s3:
+        object_key = os.sep.join(dataset_file[3:] + [name + '.npz'])
+        s3.upload_file(Filename=target_filename, Bucket=dataset_file[2],
+                       Key=object_key)
+        # Remove the tmp file
+        print(target_filename)
+        os.remove(target_filename)
 
 
 @click.command()
@@ -586,7 +613,8 @@ def cache_data_function(build_name, db_uri, limit=0, data_path=None,
 
 def main(args):
     """Main function for invocation via action"""
-    del args['payload']
+    if 'payload' in args:
+        del args['payload']
     try:
         cache_data_function(db_uri=default_db_uri, limit=0, **args)
     except Exception as e:
