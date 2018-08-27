@@ -107,6 +107,14 @@ def get_class(result, class_label='status'):
         passed_statuses = [0, 'Success']
         status = 0 if status in passed_statuses else 1
         return status
+    elif class_label == 'node_provider':
+        provider = result['node_provider']
+        if provider.startswith('rax'):
+            return 'rax'
+        elif provider.startswith('ovh'):
+            return 'ovh'
+        else:
+            return provider
     else:
         return result[class_label]
 
@@ -218,8 +226,9 @@ def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s'):
 
 
 def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
-                    features_regex, sample_interval='1s',
-                    class_label='status', visualize=False):
+                    features_regex, sample_interval='1s', class_label='status',
+                    visualize=False, data_path=None, target_data_path=None,
+                    s3=None):
     """Takes a dataset and filters and does the magic
 
     Loads the run ids from the dataset configuration.
@@ -235,7 +244,8 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
         os.makedirs(os.sep.join(data_plots_folder), exist_ok=True)
 
     # Load the list of runs and base labels
-    runs = gather_results.load_run_uuids(dataset, name=data_type)
+    runs = gather_results.load_run_uuids(dataset, name=data_type,
+                                         data_path=target_data_path, s3=s3)
 
     # run_uuids are the example_ids
     sizes = []
@@ -251,7 +261,7 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
         print("Loading %s data: %d of %d" % (data_type, count + 1, len(runs)),
               end='\r', flush=True)
         result = gather_results.get_subunit_results_for_run(
-            run, sample_interval)
+            run, sample_interval, data_path=data_path, s3=s3)
         # For one run_uuid we must only get on example (result)
         # Filtering by columns
         if not result:
@@ -383,10 +393,23 @@ def dataset_split_filters(size, training, dev):
               help='When True, override existing dataset config')
 @click.option('--visualize/--no-visualize', default=False,
               help="Visualize data")
+@click.option('--data-path', default=None,
+              help="Path to the raw data, local path or s3://<bucket>")
+@click.option('--target-data-path', default=None,
+              help="Path where to store data, local path or s3://<bucket>")
+@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-url',
+              default='https://s3.eu-geo.objectstorage.softlayer.net',
+              help='Endpoint URL for the s3 storage')
 def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
-                  class_label, tdt_split, force, visualize):
+                  class_label, tdt_split, force, visualize, data_path,
+                  target_data_path, s3_profile, s3_url):
+    # s3 support
+    s3 = gather_results.get_s3_client(s3_url=s3_url, s3_profile=s3_profile)
+
     # Prevent overwrite by mistake
-    if gather_results.load_model_config(dataset) and not force:
+    if gather_results.load_model_config(dataset, data_path=target_data_path,
+                                        s3=s3) and not force:
         print("Dataset %s already configured" % dataset)
         sys.exit(1)
 
@@ -396,8 +419,9 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
         print("Training (%d) + dev (%d) + test (%d) != 10" % tdt_split)
         sys.exit(1)
 
-    # Load available run ids for the build name
-    runs = gather_results.load_run_uuids('.raw', name=build_name)
+    # Load available run ids for the build name (from s3)
+    runs = gather_results.load_run_uuids('.raw', name=build_name,
+                                         data_path=data_path, s3=s3)
     # Apply the slice
     slice_fn = lambda x: int(x.strip()) if x.strip() else None
     slice_object = slice(*map(slice_fn, slicer.split(":")))
@@ -408,10 +432,14 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
     training_idx, dev_idx, test_idx = dataset_split_filters(
         len(runs), training, dev)
     np_runs = np.array(runs)
+    # Saving dataset metadata
     gather_results.save_run_uuids(dataset, np_runs[training_idx],
-                                  name='training')
-    gather_results.save_run_uuids(dataset, np_runs[dev_idx], name='dev')
-    gather_results.save_run_uuids(dataset, np_runs[test_idx], name='test')
+                                  name='training', data_path=target_data_path,
+                                  s3=s3)
+    gather_results.save_run_uuids(dataset, np_runs[dev_idx], name='dev',
+                                  data_path=target_data_path, s3=s3)
+    gather_results.save_run_uuids(dataset, np_runs[test_idx], name='test',
+                                  data_path=target_data_path, s3=s3)
 
     # Calculate normalized and filtered dimensions and labels
     normalized_length, num_dstat_features, labels = \
@@ -432,8 +460,10 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
     }
 
     # Save the config and complete list of run uuids
-    gather_results.save_run_uuids(dataset, runs)
-    gather_results.save_model_config(dataset, model_config)
+    gather_results.save_run_uuids(dataset, runs, data_path=target_data_path,
+                                  s3=s3)
+    gather_results.save_model_config(dataset, model_config,
+                                     data_path=target_data_path, s3=s3)
     print("Stored %d run IDs in the model %s config" % (len(runs), dataset))
 
     datasets = {}
@@ -443,7 +473,8 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
             dataset, normalized_length, num_dstat_features, data_type,
             features_regex=features_regex,
             sample_interval=sample_interval, class_label=class_label,
-            visualize=visualize)
+            visualize=visualize, data_path=data_path,
+            target_data_path=target_data_path, s3=s3)
         datasets[data_type] = data
         examples = data['examples']
         if len(examples) == 0:
@@ -457,7 +488,8 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
             # We cache normalization parameters from the training data set
             # to normalize the dev and test set, as well as other input data
             model_config['normalization_params'] = normalization_params
-            gather_results.save_model_config(dataset, model_config)
+            gather_results.save_model_config(dataset, model_config,
+                                             data_path=target_data_path, s3=s3)
 
             # Save figure sizes as well for training only
             figure_sizes = _figure_sizes
@@ -471,6 +503,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 
         # Store the normalized data to disk
         gather_results.save_dataset(dataset, name=data_type,
+                                    data_path=target_data_path, s3=s3,
                                     **datasets[data_type])
 
 
@@ -491,7 +524,9 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
         plt.close(fig)
 
     # Store labels to disk
-    gather_results.save_dataset(dataset, name='labels', labels=labels)
+    gather_results.save_dataset(dataset, name='labels',
+                                data_path=target_data_path, s3=s3,
+                                labels=labels)
 
 
 @click.command()
@@ -515,8 +550,15 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 @click.option('--learning-rate', default=0.05, help='Learning rate')
 @click.option('--force/--no-force', default=False,
               help='When True, override existing dataset config')
+@click.option('--data-path', default=None,
+              help="Path to the raw data, local path or s3://<bucket>")
+@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-url',
+              default='https://s3.eu-geo.objectstorage.softlayer.net',
+              help='Endpoint URL for the s3 storage')
 def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
-                     batch_size, epochs, optimizer, learning_rate, force):
+                     batch_size, epochs, optimizer, learning_rate, force,
+                     data_path, s3_profile, s3_url):
     """Define experiment parameters and hyper parameters
 
     Supported optimizers:
@@ -526,8 +568,12 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
     * 'RMSProp': Returns an `RMSPropOptimizer`.
     * 'SGD': Returns a `GradientDescentOptimizer`.
     """
+    # s3 support, only for loading the dataset
+    s3 = gather_results.get_s3_client(s3_url=s3_url, s3_profile=s3_profile)
+
     # Check that the dataset exists
-    if not gather_results.load_model_config(dataset):
+    if not gather_results.load_model_config(dataset, data_path=data_path,
+                                            s3=s3):
         print("Dataset %s not found" % dataset)
         sys.exit(1)
     # Prevent overwrite by mistake
@@ -566,14 +612,25 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
               help='Name of a dataset to be used for alternate evaluation')
 @click.option('--gpu', default=False, help='Force using gpu')
 @click.option('--debug/--no-debug', default=False)
-def local_trainer(dataset, experiment, eval_dataset, gpu, debug):
+@click.option('--data-path', default=None,
+              help="Path to the raw data, local path or s3://<bucket>")
+@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-url',
+              default='https://s3.eu-geo.objectstorage.softlayer.net',
+              help='Endpoint URL for the s3 storage')
+def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
+                  s3_profile, s3_url):
     # Load experiment data
     experiment_data = gather_results.load_experiment(dataset, experiment)
     if not experiment_data:
         print("Experiment %s in dataset %s not found" % (experiment, dataset))
         sys.exit(1)
 
-    dataset_data = gather_results.load_model_config(dataset)
+    # s3 support, only for loading the dataset
+    s3 = gather_results.get_s3_client(s3_url=s3_url, s3_profile=s3_profile)
+
+    dataset_data = gather_results.load_model_config(
+        dataset, data_path=data_path, s3=s3)
 
     # Read hyper_params and params
     estimator = experiment_data['estimator']
@@ -592,15 +649,18 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug):
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
     # Load the normalized data
-    labels = gather_results.load_dataset(dataset, 'labels')['labels']
-    training_data = gather_results.load_dataset(dataset, 'training')
-    test_data = gather_results.load_dataset(dataset, 'test')
+    labels = gather_results.load_dataset(dataset, 'labels',
+                                         data_path=data_path, s3=s3)['labels']
+    training_data = gather_results.load_dataset(dataset, 'training',
+                                                data_path=data_path, s3=s3)
+    test_data = gather_results.load_dataset(dataset, 'test',
+                                            data_path=data_path, s3=s3)
     print("Training data shape: (%d, %d)" % training_data['examples'].shape)
 
     if class_label == 'node_provider':
-        label_vocabulary = set(['rax-iad', 'ovh-bhs1', 'packethost-us-west-1',
-                                'rax-dfw', 'vexxhost-ca-ymq-1', 'ovh-gra1',
-                                'limestone-regionone', 'inap-mtl01', 'rax-ord'])
+        label_vocabulary = set(['rax', 'ovh', 'packethost-us-west-1',
+                                'vexxhost-ca-ymq-1', 'limestone-regionone',
+                                'inap-mtl01'])
     else:
         label_vocabulary = None
 
@@ -621,7 +681,8 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug):
         eval_sets = [dataset]
         eval_sets.extend(eval_dataset)
         for eval_dataset_name in eval_sets:
-            eval_data = gather_results.load_dataset(eval_dataset_name, 'test')
+            eval_data = gather_results.load_dataset(eval_dataset_name, 'test',
+                                                    data_path=data_path, s3=s3)
             eval_size = len(eval_data['example_ids'])
             print(
                 "Evaluation data shape: (%d, %d)" % eval_data['examples'].shape)
