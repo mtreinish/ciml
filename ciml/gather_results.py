@@ -598,7 +598,7 @@ def save_dataset(dataset, name, data_path=None, s3=None, **kwargs):
 @click.option('--data-keys', '-k', multiple=True, help="Key to export")
 @click.option('--data-path', default=None,
               help="Path to the raw data, local path or s3://<bucket>")
-@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-profile', default=None, help='Named configuration')
 @click.option('--s3-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
@@ -669,7 +669,7 @@ def plot_experiment_data(dataset_experiment_label,
 @click.option('--limit', default=0, help="Maximum number of entries")
 @click.option('--data-path', default=None,
               help="Path to the data, local or in the s3://<bucket> format")
-@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-profile', default=None, help='Named configuration')
 @click.option('--s3-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')

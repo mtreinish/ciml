@@ -399,7 +399,7 @@ def dataset_split_filters(size, training, dev):
               help="Path to the raw data, local path or s3://<bucket>")
 @click.option('--target-data-path', default=None,
               help="Path where to store data, local path or s3://<bucket>")
-@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-profile', default=None, help='Named configuration')
 @click.option('--s3-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
@@ -552,7 +552,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
               help='When True, override existing dataset config')
 @click.option('--data-path', default=None,
               help="Path to the raw data, local path or s3://<bucket>")
-@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-profile', default=None, help='Named configuration')
 @click.option('--s3-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
@@ -611,7 +611,7 @@ def setup_experiment(experiment, estimator, hidden_layers, steps,
 @click.option('--debug/--no-debug', default=False)
 @click.option('--data-path', default=None,
               help="Path to the raw data, local path or s3://<bucket>")
-@click.option('--s3-profile', default='ibmcloud', help='Named configuration')
+@click.option('--s3-profile', default=None, help='Named configuration')
 @click.option('--s3-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
