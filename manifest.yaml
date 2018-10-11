@@ -1,0 +1,33 @@
+name: ciml
+description: CI Machine Learning
+version: "1.0"
+gpus: 0
+cpus: 0.5
+memory: 1Gb
+learners: 1
+
+# Object stores that allow the system to retrieve training data.
+data_stores:
+  - id: ciml_data
+    type: mount_cos
+    training_data:
+      container: cimldatasets
+    training_results:
+      container: cimloutput
+    connection:
+      auth_url: https://s3.eu-geo.objectstorage.softlayer.net
+      user_name: 035ae897e52b4768b850be9dad69945e
+      password: 6ee761ecc62af71540144c51870a304048dc2ae004e27999
+
+framework:
+  name: tensorflow
+  version: "1.6.0-py3"
+  command: >
+    ./train.sh test-s3 test-exp
+
+evaluation_metrics:
+  type: tensorboard
+  in: "$JOB_STATE_DIR/logs/tb"
+  # (Eventual) Available event types: 'images', 'distributions', 'histograms', 'images'
+  # 'audio', 'scalars', 'tensors', 'graph', 'meta_graph', 'run_metadata'
+#  event_types: [scalars]
