@@ -532,8 +532,6 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 
 
 @click.command()
-@click.option('--dataset', default="dataset",
-              help="Name of the dataset folder.")
 @click.option('--experiment', default='experiment',
               help="Name of the experiment")
 @click.option('--estimator', default='tf.estimator.DNNClassifier',
@@ -558,7 +556,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 @click.option('--s3-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
-def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
+def setup_experiment(experiment, estimator, hidden_layers, steps,
                      batch_size, epochs, optimizer, learning_rate, force,
                      data_path, s3_profile, s3_url):
     """Define experiment parameters and hyper parameters
@@ -573,14 +571,10 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
     # s3 support, only for loading the dataset
     s3 = gather_results.get_s3_client(s3_url=s3_url, s3_profile=s3_profile)
 
-    # Check that the dataset exists
-    if not gather_results.load_model_config(dataset, data_path=data_path,
-                                            s3=s3):
-        print("Dataset %s not found" % dataset)
-        sys.exit(1)
     # Prevent overwrite by mistake
-    if gather_results.load_experiment(dataset, experiment) and not force:
-        print("Experiment %s/%s already configured" % (dataset, experiment))
+    if gather_results.load_experiment(
+            experiment, data_path=data_path, s3=s3) and not force:
+        print("Experiment %s already configured" % experiment)
         sys.exit(1)
     params = {}
     hyper_params = {
@@ -598,8 +592,9 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
         'hyper_params': hyper_params
     }
     # Store the experiment to disk
-    gather_results.save_experiment(dataset, experiment_data, experiment)
-    print("Experiment %s/%s saved successfully." % (dataset, experiment))
+    gather_results.save_experiment(experiment_data, experiment,
+                                   data_path=data_path, s3=s3)
+    print("Experiment %s saved successfully." % experiment)
     print("\testimator: %s" % estimator)
     print("\tparameters: %s" % params)
     print("\thyper parameters: %s" % hyper_params)
@@ -622,17 +617,23 @@ def setup_experiment(dataset, experiment, estimator, hidden_layers, steps,
               help='Endpoint URL for the s3 storage')
 def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
                   s3_profile, s3_url):
-    # Load experiment data
-    experiment_data = gather_results.load_experiment(dataset, experiment)
-    if not experiment_data:
-        print("Experiment %s in dataset %s not found" % (experiment, dataset))
-        sys.exit(1)
-
-    # s3 support, only for loading the dataset
+    # s3 support. When both using s3, dataset and experiment must stored
+    # in the same bucket
     s3 = gather_results.get_s3_client(s3_url=s3_url, s3_profile=s3_profile)
 
+    # Load experiment data
+    experiment_data = gather_results.load_experiment(
+        experiment, data_path=data_path, s3=s3)
+    if not experiment_data:
+        print("Experiment %s not found" % experiment)
+        sys.exit(1)
+
+    # Load dataset data
     dataset_data = gather_results.load_model_config(
         dataset, data_path=data_path, s3=s3)
+    if not dataset_data:
+        print("Dataset %s not found" % dataset)
+        sys.exit(1)
 
     # Read hyper_params and params
     estimator = experiment_data['estimator']
@@ -671,7 +672,7 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
         label_vocabulary = None
 
     # Get the estimator
-    model_dir = gather_results.get_experiment_folder(dataset, experiment)
+    model_dir = gather_results.get_model_folder(dataset, experiment)
     estimator = tf_trainer.get_estimator(
         estimator, hyper_params, params, labels, model_dir,
         optimizer=_OPTIMIZER_CLS_NAMES[optimizer](learning_rate=learning_rate),

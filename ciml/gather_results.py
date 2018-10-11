@@ -524,17 +524,17 @@ def save_run_uuids(dataset, run_uuids, name='runs', data_path=None, s3=None):
     save_data_json(dataset, list(run_uuids), name, data_path=data_path, s3=s3)
 
 
-def load_experiment(dataset, name, data_path=None):
-    return load_data_json(dataset, 'experiment', sub_folder=name,
-                          data_path=data_path)
+def load_experiment(name, data_path=None, s3=None):
+    return load_data_json('_experiments', 'experiment', sub_folder=name,
+                          data_path=data_path, s3=s3)
 
 
-def save_experiment(dataset, experiment, name, data_path=None):
-    save_data_json(dataset, experiment, 'experiment', sub_folder=name,
-                   data_path=data_path)
+def save_experiment(experiment, name, data_path=None, s3=None):
+    save_data_json('_experiments', experiment, 'experiment', sub_folder=name,
+                   data_path=data_path, s3=s3)
 
 
-def get_experiment_folder(dataset, name, data_path=None):
+def get_model_folder(dataset, name, data_path=None):
     return get_data_json_folder(dataset, sub_folder=name, data_path=data_path)
 
 
