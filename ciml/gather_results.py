@@ -487,7 +487,8 @@ def load_data_json(dataset, name, ignore_error=False, sub_folder=None,
         stream_or_file = lambda: os.sep.join(dataset_folder)
     # Unzip object stream or local file
     try:
-        with gzip.open(stream_or_file(), mode='r') as f:
+        # Force text mode to ensure we get a string, not bytes
+        with gzip.open(stream_or_file(), mode='rt') as f:
             return json.load(f)
     except s3_safe.exceptions.NoSuchKey:
         return None
