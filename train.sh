@@ -7,8 +7,11 @@ DATASET=${1:-DATASET}
 EXPERIMENT=${2:-EXPERIMENT}
 
 # Install any missing depenency
-pip install -r requirements.txt;
+pip install -r requirements.txt
 
 # Run the training
 python3 -c "from ciml.trainer import local_trainer; local_trainer()" \
   --data-path $DATA_DIR --dataset $DATASET --experiment $EXPERIMENT
+
+# Save the training results
+cp -r $MODEL_DIR/data $RESULT_DIR/

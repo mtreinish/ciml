@@ -27,7 +27,7 @@ framework:
 
 evaluation_metrics:
   type: tensorboard
-  in: "$JOB_STATE_DIR/logs/tb"
+  in: "$MODEL_DIR/test-s3/test-exp"
   # (Eventual) Available event types: 'images', 'distributions', 'histograms', 'images'
   # 'audio', 'scalars', 'tensors', 'graph', 'meta_graph', 'run_metadata'
-#  event_types: [scalars]
+  event_types: [scalars]
