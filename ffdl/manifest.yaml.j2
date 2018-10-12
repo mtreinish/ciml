@@ -1,9 +1,9 @@
-name: ciml
+name: ciml-{{ dataset }}-{{ experiment }}
 description: CI Machine Learning
 version: "1.0"
-gpus: 0
-cpus: 0.5
-memory: 1Gb
+gpus: 1
+cpus: 2
+memory: 4Gb
 learners: 1
 
 # Object stores that allow the system to retrieve training data.
@@ -15,19 +15,19 @@ data_stores:
     training_results:
       container: cimloutput
     connection:
-      auth_url: https://s3.eu-geo.objectstorage.softlayer.net
-      user_name: 035ae897e52b4768b850be9dad69945e
-      password: 6ee761ecc62af71540144c51870a304048dc2ae004e27999
+      auth_url: {{ s3_auth_url }}
+      user_name: {{ s3_access_key_id }}
+      password: {{ s3_secret_access_key }}
 
 framework:
   name: tensorflow
-  version: "1.6.0-py3"
+  version: "1.8.0-gpu-py3"
   command: >
-    ./train.sh test-s3 test-exp
+    ./ffdl/train.sh {{ dataset }} {{ experiment }}
 
 evaluation_metrics:
   type: tensorboard
-  in: "$MODEL_DIR/test-s3/test-exp"
+  in: "$MODEL_DIR/{{ dataset }}/{{ experiment }}"
   # (Eventual) Available event types: 'images', 'distributions', 'histograms', 'images'
   # 'audio', 'scalars', 'tensors', 'graph', 'meta_graph', 'run_metadata'
   event_types: [scalars]

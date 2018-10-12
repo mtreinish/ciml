@@ -60,3 +60,7 @@ data/*
 
 # Actions
 actions/cache-data/__main__.py
+
+# FfDL
+ffdl/ciml.zip
+ffdl/manifest.yaml
