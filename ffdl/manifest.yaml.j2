@@ -3,7 +3,7 @@ description: CI Machine Learning
 version: "1.0"
 gpus: 1
 cpus: 2
-memory: 4Gb
+memory: 16Gb
 learners: 1
 
 # Object stores that allow the system to retrieve training data.
@@ -20,8 +20,8 @@ data_stores:
       password: {{ s3_secret_access_key }}
 
 framework:
-  name: tensorflow
-  version: "1.8.0-gpu-py3"
+  name: custom
+  version: "andreaf76/ciml-ffdl-base"
   command: >
     ./ffdl/train.sh {{ dataset }} {{ experiment }}
 
