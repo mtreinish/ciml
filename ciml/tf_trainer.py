@@ -43,14 +43,21 @@ def get_input_fn(examples, example_ids, classes, labels,
     return _numpy_input_fn(_features, classes, shuffle=shuffle, **params)
 
 
-def get_checkpoint_config():
-    return tf.estimator.RunConfig(
-        save_checkpoints_secs = 10,  # Save checkpoints every 10s.
-        keep_checkpoint_max = 100,   # Retain the 100 most recent checkpoints.
-    )
+def get_estimator_config(gpu):
+    config_params = {
+        'save_checkpoints_secs': 10,  # Save checkpoints every 10s.
+        'keep_checkpoint_max': 100,   # Retain the 100 most recent checkpoints.
+    }
+    session_config = tf.ConfigProto()
+    session_config.allow_soft_placement = True
+    if gpu:
+        session_config.gpu_options.allow_growth = True
+    config_params['session_config'] = session_config
+
+    return tf.estimator.RunConfig(**config_params)
 
 def get_estimator(estimator_name, hyper_params, params, labels, model_dir,
-                  optimizer=None, label_vocabulary=None):
+                  optimizer=None, label_vocabulary=None, gpu=False):
 
     estimator_params = {}
     if optimizer:
@@ -67,7 +74,7 @@ def get_estimator(estimator_name, hyper_params, params, labels, model_dir,
             feature_columns=get_feature_columns(labels),
             example_id_column='example_id',
             model_dir=model_dir,
-            config=get_checkpoint_config(),
+            config=get_estimator_config(gpu=gpu),
             **estimator_params)
 
     # DNN Model
@@ -75,7 +82,7 @@ def get_estimator(estimator_name, hyper_params, params, labels, model_dir,
         estimator = tf.estimator.DNNClassifier(
             feature_columns=get_feature_columns(labels),
             model_dir=model_dir,
-            config=get_checkpoint_config(),
+            config=get_estimator_config(gpu=gpu),
             hidden_units=hyper_params['hidden_units'],
             **estimator_params)
         return estimator

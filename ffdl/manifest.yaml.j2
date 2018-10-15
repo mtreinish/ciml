@@ -20,8 +20,8 @@ data_stores:
       password: {{ s3_secret_access_key }}
 
 framework:
-  name: custom
-  version: "andreaf76/ciml-ffdl-base"
+  name: tensorflow
+  version: 1.6.0-gpu-py3
   command: >
     ./ffdl/train.sh {{ dataset }} {{ experiment }}
 

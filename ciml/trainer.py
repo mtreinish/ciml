@@ -607,7 +607,7 @@ def setup_experiment(experiment, estimator, hidden_layers, steps,
               help="Name of the experiment")
 @click.option('--eval-dataset', multiple=True, default=None,
               help='Name of a dataset to be used for alternate evaluation')
-@click.option('--gpu', default=False, help='Force using gpu')
+@click.option('--gpu/--no-gpu', default=False, help='Force using gpu')
 @click.option('--debug/--no-debug', default=False)
 @click.option('--data-path', default=None,
               help="Path to the raw data, local path or s3://<bucket>")
@@ -648,9 +648,7 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
 
     if debug:
         tf.logging.set_verbosity(tf.logging.DEBUG)
-    config = tf.ConfigProto(log_device_placement=True,)
-    config.gpu_options.allow_growth = True
-    config.allow_soft_placement = True
+
     # Load the normalized data
     labels = gather_results.load_dataset(dataset, 'labels',
                                          data_path=data_path, s3=s3)['labels']
@@ -676,7 +674,7 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
     estimator = tf_trainer.get_estimator(
         estimator, hyper_params, params, labels, model_dir,
         optimizer=_OPTIMIZER_CLS_NAMES[optimizer](learning_rate=learning_rate),
-        label_vocabulary=label_vocabulary)
+        label_vocabulary=label_vocabulary, gpu=gpu)
 
     def train_and_eval():
         # Train
@@ -706,7 +704,7 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
 
     # Now do the training and evalutation
     if gpu:
-        with tf.device('/device:GPU:0'):
+        with tf.device('/gpu:0'):
             eval_loss = train_and_eval()
     else:
         eval_loss = train_and_eval()
