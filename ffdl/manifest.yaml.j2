@@ -1,7 +1,7 @@
-name: ciml-{{ dataset }}-{{ experiment }}
+name: ciml-{{ dataset }}-{{ experiment }}{% if gpus is gt 0 %}-{{ gpus }}-gpu{% endif %}
 description: CI Machine Learning
 version: "1.0"
-gpus: 1
+gpus: {{ gpus }}
 cpus: 2
 memory: 16Gb
 learners: 1
@@ -21,9 +21,9 @@ data_stores:
 
 framework:
   name: tensorflow
-  version: 1.6.0-gpu-py3
+  version: 1.6.0-{% if gpus is gt 0 %}gpu-{% endif %}py3
   command: >
-    ./ffdl/train.sh {{ dataset }} {{ experiment }}
+    ./ffdl/train.sh {{ dataset }} {{ experiment }} {% if gpus is gt 0 %}true{% endif %}
 
 evaluation_metrics:
   type: tensorboard

@@ -22,21 +22,24 @@ import sys
               help="Name of the experiment")
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
+@click.option('--gpus', default=0,
+              help="Number of GPUs to use.")
 @click.option('--s3-access-key-id', default=None, help='S3 Access Key ID')
 @click.option('--s3-secret-access-key', default=None,
               help='S3 Secret Access Key')
 @click.option('--s3-auth-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
-def make_manifest(experiment, dataset, s3_access_key_id, s3_secret_access_key,
-                  s3_auth_url):
+def make_manifest(experiment, gpus, dataset, s3_access_key_id,
+                  s3_secret_access_key, s3_auth_url):
     dir_path = os.path.dirname(os.path.realpath(__file__))
     file_loader = jinja2.FileSystemLoader(dir_path)
     env = jinja2.Environment(loader=file_loader)
     template = env.get_template('manifest.yaml.j2')
     #Add the varibles
     output = template.render(
-        experiment=experiment, dataset=dataset, s3_auth_url=s3_auth_url,
+        experiment=experiment, dataset=dataset, gpus=gpus,
+        s3_auth_url=s3_auth_url,
         s3_access_key_id=s3_access_key_id,
         s3_secret_access_key=s3_secret_access_key)
     print(output)
