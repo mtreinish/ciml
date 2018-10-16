@@ -1,5 +1,5 @@
 name: ciml-{{ dataset }}-{{ experiment }}{% if gpus is gt 0 %}-{{ gpus }}-gpu{% endif %}
-description: CI Machine Learning
+description: CI Machine Learning. Run experiment {{ experiment }} on dataset {{ dataset }}.
 version: "1.0"
 gpus: {{ gpus }}
 cpus: 2
@@ -20,8 +20,8 @@ data_stores:
       password: {{ s3_secret_access_key }}
 
 framework:
-  name: tensorflow
-  version: 1.6.0-{% if gpus is gt 0 %}gpu-{% endif %}py3
+  name: custom
+  version: andreaf76/ciml-ffdl-base{% if gpus is gt 0 %}-gpu{% endif %}:0.2
   command: >
     ./ffdl/train.sh {{ dataset }} {{ experiment }} {% if gpus is gt 0 %}true{% endif %}
 
