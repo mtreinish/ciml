@@ -45,8 +45,8 @@ def get_input_fn(examples, example_ids, classes, labels,
 
 def get_estimator_config(gpu):
     config_params = {
-        'save_checkpoints_secs': 10,  # Save checkpoints every 10s.
-        'keep_checkpoint_max': 100,   # Retain the 100 most recent checkpoints.
+        'save_checkpoints_secs': 300,  # Save checkpoints every 5min.
+        'keep_checkpoint_max': 10,   # Retain the 10 most recent checkpoints.
     }
     session_config = tf.ConfigProto()
     session_config.allow_soft_placement = True
