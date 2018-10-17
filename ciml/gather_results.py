@@ -238,7 +238,7 @@ def _get_result_for_run(run, session, use_db=True, get_tests=False,
     # If cached
     if stream_or_file:
         try:
-            with gzip.open(stream_or_file(), mode='r') as f:
+            with gzip.open(stream_or_file(), mode='rt') as f:
                 if use_db:
                     # When using remote let me know if loading from cache
                     print("%s: metadata found in cache" % run.uuid)
@@ -688,7 +688,7 @@ def cache_data_function(build_name, db_uri, limit=0, data_path=None,
                         s3_secret_access_key=None):
     runs = get_runs_by_name(db_uri, build_name=build_name)
     print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
-    s3=get_s3_client(s3_url=s3_url,s3_profile=s3_profile,
+    s3=get_s3_client(s3_url=s3_url, s3_profile=s3_profile,
                      s3_access_key_id=s3_access_key_id,
                      s3_secret_access_key=s3_secret_access_key)
     limit_runs = gather_and_cache_results_for_runs(

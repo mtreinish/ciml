@@ -203,7 +203,8 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
     return ts.shape[0]
 
 
-def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s'):
+def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s',
+                          data_path=None, s3=None):
     """Takes a sample run from a dataset and filters and does calculations
 
     Returns:
@@ -220,7 +221,7 @@ def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s'):
 
     # Load the list of runs and base labels
     sample_result = gather_results.get_subunit_results_for_run(
-        sample_run, sample_interval)
+        sample_run, sample_interval, data_path=data_path, s3=s3)
     filtered_sample_result = filter_example(sample_result, features_regex)
     filtered_dstat_labels = filtered_sample_result['dstat'].columns
     unrolled_labels = unroll_labels(filtered_dstat_labels, normalized_length)
@@ -445,7 +446,8 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 
     # Calculate normalized and filtered dimensions and labels
     normalized_length, num_dstat_features, labels = \
-        data_sizes_and_labels(runs[0], features_regex, sample_interval)
+        data_sizes_and_labels(runs[0], features_regex, sample_interval,
+                              data_path=data_path, s3=s3)
 
     model_config = {
         'build_name': build_name,
