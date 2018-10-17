@@ -27,11 +27,39 @@ packages:
             type: dict
             description: the output of the cache operation
         limits:
-          timeout: 300000  
+          timeout: 300000
+      cache-data-2:
+        location: cache-data/__main__.py
+        docker: andreaf76/ciml-action-base:1.0
+        inputs:
+          build_name:
+            type: string
+            description: name of the CI job
+          data_path:
+            type: string
+            description: s3://<name of bucket>
+          s3_access_key_id:
+            type: string
+            description: s3 access key ID
+          s3_secret_access_key:
+            type: string
+            description: s3 secret access key
+          s3_url:
+            type: string
+            description: URL of the s3 service
+        outputs:
+          payload:
+            type: dict
+            description: the output of the cache operation
+        limits:
+          timeout: 300000
     triggers:
       Every12Hours:
         feed: /whisk.system/alarms/alarm
     rules:
       cimlCacheDataCron:
         action: cache-data
+        trigger: Every12Hours
+      cimlCacheData2Cron:
+        action: cache-data-2
         trigger: Every12Hours

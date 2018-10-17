@@ -10,6 +10,13 @@ project:
             s3_url: $S3_URL
             s3_access_key_id: $S3_ACCESS_KEY_ID
             s3_secret_access_key: $S3_SECRET_ACCESS_KEY
+        cache-data-2:
+          inputs:
+            build_name: tempest-full-py3
+            data_path: $CIML_DATA_PATH
+            s3_url: $S3_URL
+            s3_access_key_id: $S3_ACCESS_KEY_ID
+            s3_secret_access_key: $S3_SECRET_ACCESS_KEY
       triggers:
         Every12Hours:
           inputs:
