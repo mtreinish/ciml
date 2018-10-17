@@ -56,6 +56,10 @@ def get_s3_client(s3_profile=None, s3_url=None, s3_access_key_id=None,
     elif s3_access_key_id and s3_secret_access_key:
         session_kwargs['aws_access_key_id'] = s3_access_key_id
         session_kwargs['aws_secret_access_key'] = s3_secret_access_key
+    else:
+        session_kwargs['aws_access_key_id'] = os.getenv('AWS_ACCESS_KEY_ID')
+        session_kwargs['aws_secret_access_key'] = os.getenv(
+            'AWS_SECRET_ACCESS_KEY')
     if s3_url:
         client_kwargs['endpoint_url'] = s3_url
     session = boto3.Session(**session_kwargs)
