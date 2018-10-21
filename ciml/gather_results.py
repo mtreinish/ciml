@@ -68,10 +68,10 @@ def get_s3_client(s3_profile=None, s3_url=None, s3_access_key_id=None,
 
 def get_data_path(data_path=None, s3=None):
     """Data path is a string"""
+    root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
     if not data_path:
         try:
-            return [os.path.dirname(os.path.realpath(__file__)),
-                    os.pardir, 'data']
+            return root_list + ['data']
         except NameError:
             # Running an interactive python, __file__ is not defined
             return tempfile.mkdtemp(prefix='ciml').split(os.sep)

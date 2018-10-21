@@ -8,10 +8,10 @@ CIML_DIR=$(cd $(dirname $0); pwd)
 RUN_DIR=$(pwd)
 
 # Generate the model zip
-pushd "$CIML_DIR"
+pushd "$CIML_DIR" &> /dev/null
 mkdir -p "${RUN_DIR}/ffdl"
 git archive -o "$RUN_DIR/ffdl/ciml.zip" HEAD
-popd
+popd &> /dev/null
 
 # Number of GPUs to use
 GPUS=${3:-0}
