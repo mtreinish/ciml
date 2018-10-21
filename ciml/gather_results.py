@@ -588,7 +588,6 @@ def save_dataset(dataset, name, data_path=None, s3=None, **kwargs):
         s3.upload_file(Filename=target_filename, Bucket=dataset_file[2],
                        Key=object_key)
         # Remove the tmp file
-        print(target_filename)
         os.remove(target_filename)
 
 

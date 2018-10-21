@@ -404,9 +404,11 @@ def dataset_split_filters(size, training, dev):
 @click.option('--s3-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
+@click.option('--data-plots-folder', default="/tmp",
+              help="Folder where plots are stored")
 def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
                   class_label, tdt_split, force, visualize, data_path,
-                  target_data_path, s3_profile, s3_url):
+                  target_data_path, s3_profile, s3_url, data_plots_folder):
     # s3 support
     s3 = gather_results.get_s3_client(s3_url=s3_url, s3_profile=s3_profile)
 
@@ -448,7 +450,6 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
     normalized_length, num_dstat_features, labels = \
         data_sizes_and_labels(runs[0], features_regex, sample_interval,
                               data_path=data_path, s3=s3)
-
     model_config = {
         'build_name': build_name,
         'sample_interval': sample_interval,
@@ -513,24 +514,27 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 
     # Plot some more figures
     if visualize:
-        for n in range(n_examples.shape(1)):
+        for n in range(n_examples.shape[0]):
             figure_name = sample_interval + "_%s_" + str(n)
             unrolled_norm_plot = pd.Series(n_examples[n]).plot()
             fig = unrolled_norm_plot.get_figure()
+            axes = plt.gca()
+            axes.set_ylim([-1,1])
             fig.savefig(os.sep.join(
-                data_plots_folder + [figure_name % "normalized"]))
+                [data_plots_folder] + [figure_name % "normalized"]))
             plt.close(fig)
 
         df = pd.DataFrame(figure_sizes, columns=['size', 'status'])
         size_plot = df.plot.scatter(x='size', y='status')
         fig = size_plot.get_figure()
-        fig.savefig(os.sep.join(data_plots_folder + ['sizes_by_result.png']))
+        fig.savefig(os.sep.join([data_plots_folder] + ['sizes_by_result.png']))
         plt.close(fig)
 
     # Store labels to disk
     gather_results.save_dataset(dataset, name='labels',
                                 data_path=target_data_path, s3=s3,
                                 labels=labels)
+    print("Done creating dataset %s" % model_config)
 
 
 @click.command()
