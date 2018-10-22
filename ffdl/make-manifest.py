@@ -34,7 +34,7 @@ import sys
               help="Name of the input bucket.")
 @click.option('--output-bucket', default="cimloutput",
               help="Name of the input bucket.")
-def make_manifest(experiment, gpus, dataset, s3_access_key_id,
+def make_manifest(experiment, dataset, gpus, s3_access_key_id,
                   s3_secret_access_key, s3_auth_url, input_bucket,
                   output_bucket):
     dir_path = os.path.dirname(os.path.realpath(__file__))
