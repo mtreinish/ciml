@@ -113,6 +113,8 @@ def get_class(result, class_label='status'):
             return 'rax'
         elif provider.startswith('ovh'):
             return 'ovh'
+        elif provider.startswith('vexxhost'):
+            return 'vexxhost'
         else:
             return provider
     elif class_label == 'node_provider_all':
@@ -666,12 +668,13 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
 
     if class_label == 'node_provider':
         label_vocabulary = set(['rax', 'ovh', 'packethost-us-west-1',
-                                'vexxhost-ca-ymq-1', 'limestone-regionone',
+                                'vexxhost', 'limestone-regionone',
                                 'inap-mtl01'])
     elif class_label == 'node_provider_all':
         label_vocabulary = set(['rax-iad', 'ovh-bhs1', 'packethost-us-west-1',
                                 'rax-dfw', 'vexxhost-ca-ymq-1', 'ovh-gra1',
-                                'limestone-regionone', 'inap-mtl01', 'rax-ord'])
+                                'limestone-regionone', 'inap-mtl01', 'rax-ord',
+                                'vexxhost-sjc1'])
     else:
         label_vocabulary = None
 
