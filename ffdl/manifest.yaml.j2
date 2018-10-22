@@ -11,9 +11,9 @@ data_stores:
   - id: ciml_data
     type: mount_cos
     training_data:
-      container: cimldatasets
+      container: {{ input_bucket }}
     training_results:
-      container: cimloutput
+      container: {{ output_bucket }}
     connection:
       auth_url: {{ s3_auth_url }}
       user_name: {{ s3_access_key_id }}

@@ -30,8 +30,13 @@ import sys
 @click.option('--s3-auth-url',
               default='https://s3.eu-geo.objectstorage.softlayer.net',
               help='Endpoint URL for the s3 storage')
+@click.option('--input-bucket', default="cimldatasets",
+              help="Name of the input bucket.")
+@click.option('--output-bucket', default="cimloutput",
+              help="Name of the input bucket.")
 def make_manifest(experiment, gpus, dataset, s3_access_key_id,
-                  s3_secret_access_key, s3_auth_url):
+                  s3_secret_access_key, s3_auth_url, input_bucket,
+                  output_bucket):
     dir_path = os.path.dirname(os.path.realpath(__file__))
     file_loader = jinja2.FileSystemLoader(dir_path)
     env = jinja2.Environment(loader=file_loader)
@@ -41,7 +46,9 @@ def make_manifest(experiment, gpus, dataset, s3_access_key_id,
         experiment=experiment, dataset=dataset, gpus=gpus,
         s3_auth_url=s3_auth_url,
         s3_access_key_id=s3_access_key_id,
-        s3_secret_access_key=s3_secret_access_key)
+        s3_secret_access_key=s3_secret_access_key,
+        input_bucket=input_bucket,
+        output_bucket=output_bucket)
     print(output)
 
 if __name__ == "__main__":
