@@ -168,7 +168,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                         print("%s: dstat found in cache" % run_uuid)
                     return _parse_dstat_file(f, sample_interval)
                 except pd.errors.ParserError:
-                    print('Currupted data in %s, deleting.' % raw_data_file,
+                    print('Corrupted data in %s, deleting.' % raw_data_file,
                           file=sys.stderr)
                     os.remove(raw_data_file)
         except IOError as ioe:
@@ -598,7 +598,7 @@ def save_dataset(dataset, name, data_path=None, s3=None, **kwargs):
               help="Name of the dataset and experiment to compare.",
               multiple=True)
 @click.option('--experiment-sets-names', nargs=2, type=str,
-              help="Name of the experiment sets o compare.")
+              help="Name of the experiment sets to compare.")
 @click.option('--data-keys', '-k', multiple=True, help="Key to export")
 @click.option('--data-path', default=None,
               help="Path to the raw data, local path or s3://<bucket>")
