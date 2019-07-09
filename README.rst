@@ -39,7 +39,7 @@ logs.openstack.org. The dstat file and build results are stored gzipped
 under data/.raw and data/.metadata.
 
 Running ciml-cache-data with the same build name again extends the cache.
-Data for different build names can be cached, dedicated json files keep track
+Data for different build names can be cached, dedicated JSON files keep track
 of which data belongs to which build.
 
 For more help run:
@@ -57,7 +57,7 @@ To create a normalized dataset, use `ciml-build-dataset`:
 This selects the required number of runs from the local cache, it loads the
 data into memory, it runs the normalization step and it saves the three
 resulting datasets (traning, dev and test) into numpy compressed archives
-(.npz) files. It also creates one compressed archieve for the feature labels.
+(.npz) files. It also creates one compressed archive for the feature labels.
 
 There are several extra options that can be used to control size and
 normalization of the resulting dataset. For more help run:
@@ -83,7 +83,7 @@ To define an experiment, use `ciml-setup-experiment`:
   ciml-setup-experiment --dataset <dataset-name> --experiment <exp-name> \
     --estimator (tf.contrib.learn.SVM|tf.estimator.DNNClassifier)
 
-This stores the specified model, parameter and hyper-parameters into a json
+This stores the specified model, parameter and hyper-parameters into a JSON
 file in a dedicated folder, which is going to host TensorFlow model files as
 well.
 
@@ -99,7 +99,7 @@ To run training, use `ciml-train-model`:
 
   ciml-train-model --dataset <dataset-name> --experiment <exp-name>
 
-This loads the dataset from the numpy compressed archieves, it initialize the
+This loads the dataset from the numpy compressed archives, it initialize the
 model based on the experiment settings and runs training against the training
 set and evaluation against the test set.
 

@@ -164,7 +164,7 @@ def normalize_dataset(examples, labels, params=None):
     """Normalize features in a dataset
 
     Normalize each feature in a dataset. If e is the number of examples we have
-    in the dataset, and f is the number of features, this takes as input a
+    in the dataset, and f is the number of features, this takes as input an
     np ndarray with shape (e, f).
 
     The output is an np ndarray with shape (e, f) where data for each feature
@@ -238,7 +238,7 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
 
     Loads the run ids from the dataset configuration.
     Loads the data (dsv + meta) for every run from cache.
-    Builds the unrolled exaples as a numpy ndarray.
+    Builds the unrolled examples as a numpy ndarray.
     Builds the classes as a numpy array.
     Saves the data setup to the dataset config.
     Does some visualization (if enabled).
