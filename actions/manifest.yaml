@@ -5,7 +5,7 @@ packages:
     actions:
       cache-data:
         location: cache-data/__main__.py
-        docker: andreaf76/ciml-action-base:1.0
+        docker: andreaf76/ciml-action-base:1.1
         inputs:
           build_name:
             type: string

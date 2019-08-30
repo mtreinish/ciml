@@ -68,7 +68,10 @@ def get_s3_client(s3_profile=None, s3_url=None, s3_access_key_id=None,
 
 def get_data_path(data_path=None, s3=None):
     """Data path is a string"""
-    root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
+    try:
+        root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
+    except:
+        root_list = ""
     if not data_path:
         try:
             return root_list + ['data']
@@ -110,7 +113,12 @@ def _parse_dstat_file(input_io, sample_interval=None):
     - s is the number of samples (over time) after resampling
     - d is the number of dstat columns available
     """
-    out = pd.read_csv(input_io, skiprows=6).set_index('time')
+    try:
+        out = pd.read_csv(input_io, skiprows=6).set_index('time')
+    except KeyError:
+        # Depending on the version of dstat, we may have to skip 5 rows instead of 6
+        input_io.seek(0)
+        out = pd.read_csv(input_io, skiprows=5).set_index('time')
     out.index = [_parse_dstat_date(x) for x in out.index]
     out.index = pd.DatetimeIndex(out.index)
     if sample_interval:
@@ -639,6 +647,7 @@ def plot_experiment_data(dataset_experiment_label,
                                   sub_folder=d_e_l[1],
                                   data_path=data_path, s3=s3)
         if exp_data is None:
+            print("Missing data for %s" % str(d_e_l))
             continue
         labels.append(d_e_l[2])
         if dataset_experiment_comp:
@@ -707,12 +716,13 @@ def cache_data_function(build_name, db_uri, limit=0, data_path=None,
 
 def main(args):
     """Main function for invocation via action"""
+    result = None
     if 'payload' in args:
         del args['payload']
     try:
-        cache_data_function(db_uri=default_db_uri, limit=0, **args)
+        result = cache_data_function(db_uri=default_db_uri, limit=0, **args)
     except Exception as e:
         print(e)
     finally:
         # Ensure we always return a dict, even on failure
-        return args
+        return result or args
