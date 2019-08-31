@@ -9,6 +9,7 @@
 
 # Optional (with defaults)
 GIT_REFERENCE=${GIT_REFERENCE:-$(git rev-parse HEAD)}
+GIT_REFERENCE_OLD=${GIT_REFERENCE_OLD:-$(git rev-parse $GIT_REFERENCE~1)}
 GIT_URL=${GIT_URL:-https://github.com/mtreinish/ciml}
 IMAGES_BASE_URL=${IMAGES_BASE_URL:-index.docker.io/andreaf76}
 IMAGE_TAG=${IMAGE_TAG:-$(git rev-parse --short HEAD)}
@@ -18,6 +19,7 @@ S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:?"Please set S3_SECRET_ACCESS_KEY"}
 WSKDEPLOY_CONFIG=${WSKDEPLOY_CONFIG:?"Please set WSKDEPLOY_CONFIG"}
 DOCKER_CONFIG=${DOCKER_CONFIG:?"Please set DOCKER_CONFIG"}
 SERVICE_ACCOUNT=${SERVICE_ACCOUNT:-default}
+TASK_OR_PIPELINE=${TASK_OR_PIPELINE:-pipeline}
 
 BASEDIR=$(ROOT=$(dirname $0); cd $ROOT; pwd)
 
@@ -76,6 +78,23 @@ spec:
       value: $GIT_URL
 EOF
 )
+GIT_RESOURCE_OLD=$(cat <<EOF | kubectl create -n $TARGET_NAMESPACE -o jsonpath='{.metadata.name}' -f -
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  generateName: ciml-git-
+  labels:
+    app: ciml
+    tag: "$IMAGE_TAG"
+spec:
+  type: git
+  params:
+    - name: revision
+      value: $GIT_REFERENCE_OLD
+    - name: url
+      value: $GIT_URL
+EOF
+)
 
 # Image
 IMAGE_RESOURCE=$(cat <<EOF | kubectl create -n $TARGET_NAMESPACE -o jsonpath='{.metadata.name}' -f -
@@ -94,30 +113,57 @@ spec:
 EOF
 )
 
-## Setup and run the pipeline
-cat <<EOF | kubectl create -n $TARGET_NAMESPACE -f -
-apiVersion: tekton.dev/v1alpha1
-kind: PipelineRun
-metadata:
-  generateName: ciml-action-build-and-deploy-run-
-  labels:
-    app: ciml
-    tag: "$IMAGE_TAG"
-spec:
-  pipelineRef:
-    name: ciml-action-build-and-deploy
-  params:
-    - name: imageTag
-      value: $IMAGE_TAG
-  serviceAccount: "$SERVICE_ACCOUNT"
-  resources:
-    - name: src
-      resourceRef:
-        name: $GIT_RESOURCE
-    - name: builtImage
-      resourceRef:
-        name: $IMAGE_RESOURCE
+if [[ "$TASK_OR_PIPELINE" == "pipeline" ]]; then
+  ## Setup and run the pipeline
+  cat <<EOF | kubectl create -n $TARGET_NAMESPACE -f -
+  apiVersion: tekton.dev/v1alpha1
+  kind: PipelineRun
+  metadata:
+    generateName: ciml-action-build-and-deploy-run-
+    labels:
+      app: ciml
+      tag: "$IMAGE_TAG"
+  spec:
+    pipelineRef:
+      name: ciml-action-build-and-deploy
+    params:
+      - name: imageTag
+        value: $IMAGE_TAG
+    serviceAccount: "$SERVICE_ACCOUNT"
+    resources:
+      - name: src
+        resourceRef:
+          name: $GIT_RESOURCE
+      - name: src-old
+        resourceRef:
+          name: $GIT_RESOURCE_OLD
+      - name: builtImage
+        resourceRef:
+          name: $IMAGE_RESOURCE
 EOF
+else
+  cat <<EOF | kubectl create -n $TARGET_NAMESPACE -f -
+  apiVersion: tekton.dev/v1alpha1
+  kind: TaskRun
+  metadata:
+    generateName: ciml-action-deploy-run-
+    labels:
+      app: ciml
+      tag: "$IMAGE_TAG"
+  spec:
+    serviceAccount: "$SERVICE_ACCOUNT"
+    taskRef:
+      name: deploy-actions
+    inputs:
+      params:
+        - name: imageTag
+          value: $IMAGE_TAG
+      resources:
+        - name: workspace
+          resourceRef:
+            name: $GIT_RESOURCE
+EOF
+fi
 
 # Watch command
 echo "watch kubectl get all -l tag=$IMAGE_TAG -n $TARGET_NAMESPACE"

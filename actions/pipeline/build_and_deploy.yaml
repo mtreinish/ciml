@@ -1,4 +1,35 @@
 apiVersion: tekton.dev/v1alpha1
+kind: Condition
+metadata:
+  name: image-source-changed
+spec:
+  params:
+    - name: path
+      description: The path to the image folder
+      type: string
+  resources:
+    - name: workspace
+      type: git
+    - name: workspace-old
+      type: git
+  check:
+    image: alpine/git
+    command:
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      cd $(resources.workspace.path)
+      HEAD=`git rev-parse @:$(params.path)`
+      echo "HEAD@$PWD: $HEAD"
+      git log -1
+      cd $(resources.workspace-old.path)
+      HEADOLD=`git rev-parse @:$(params.path)`
+      echo "HEAD@$PWD: $HEADOLD"
+      git log -1
+      test $HEAD != $HEADOLD
+---
+apiVersion: tekton.dev/v1alpha1
 kind: Task
 metadata:
   name: source-to-image
@@ -8,6 +39,8 @@ spec:
   inputs:
     resources:
       - name: workspace
+        type: git
+      - name: workspace-old
         type: git
     params:
       - name: pathToDockerFile
@@ -34,6 +67,7 @@ spec:
         - --dockerfile=$(inputs.params.pathToDockerFile)
         - --reproducible
         - --destination=$(outputs.resources.builtImage.url):$(inputs.params.imageTag)
+        - --destination=$(outputs.resources.builtImage.url):latest
         - --context=$(inputs.resources.workspace.path)/$(inputs.params.pathToContext)
         - --digest-file=/workspace/workspace/__digest__
     - name: build-index-json
@@ -87,11 +121,12 @@ spec:
       command:
         - /bin/bash
       args:
-        - $(inputs.resources.workspace.path)/actions/deploy.sh
-        - --install
+        - -ce
+        - |
+          $(inputs.resources.workspace.path)/actions/deploy.sh --install
       volumeMounts:
       - name: wskconfig
-        mountPath: "/root/.wskprops"
+        mountPath: "/root/"
         readOnly: true
       env:
         - name: S3_URL
@@ -123,21 +158,35 @@ spec:
   resources:
     - name: src
       type: git
+    - name: src-old
+      type: git
     - name: builtImage
       type: image
   tasks:
   - name: source-to-image-task
     taskRef:
       name: source-to-image
+    conditions:
+      - conditionRef: image-source-changed
+        params:
+          - name: path
+            value: actions/base-image-no-tf
+        resources:
+          - name: workspace
+            resource: src
+          - name: workspace-old
+            resource: src-old
     params:
       - name: pathToContext
-        value: actions/wskdeploy-image
+        value: actions/base-image-no-tf
       - name: imageTag
         value: "$(params.imageTag)"
     resources:
       inputs:
         - name: workspace
           resource: src
+        - name: workspace-old
+          resource: src-old
       outputs:
         - name: builtImage
           resource: builtImage
@@ -146,7 +195,7 @@ spec:
       name: deploy-actions
     params:
       - name: imageTag
-        value: "$(params.imageTag)"
+        value: latest
     runAfter:
       - source-to-image-task
     resources:
