@@ -1,0 +1,155 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: source-to-image
+  labels:
+    app: ciml
+spec:
+  inputs:
+    resources:
+      - name: workspace
+        type: git
+    params:
+      - name: pathToDockerFile
+        description: The path to the dockerfile to build (relative to the context)
+        default: Dockerfile
+      - name: pathToContext
+        description:
+          The path to the build context, used by Kaniko - within the workspace
+        default: .
+      - name: imageTag
+        description: Tag of the images to be used.
+        default: "default"
+  outputs:
+    resources:
+      - name: builtImage
+        type: image
+        outputImageDir: /workspace/workspace/
+  steps:
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor@sha256:c6e1f98d3ee4383078929d7b23f55328f5ae2bfeb234f91da61b2e423f5a58fe
+      command:
+        - /kaniko/executor
+      args:
+        - --dockerfile=$(inputs.params.pathToDockerFile)
+        - --reproducible
+        - --destination=$(outputs.resources.builtImage.url):$(inputs.params.imageTag)
+        - --context=$(inputs.resources.workspace.path)/$(inputs.params.pathToContext)
+        - --digest-file=/workspace/workspace/__digest__
+    - name: build-index-json
+      image: busybox
+      command:
+      - /bin/sh
+      args:
+      - -ce
+      - |
+        set -e
+        cat <<EOF > /workspace/workspace/index.json
+        {
+          "schemaVersion": 2,
+          "manifests": [
+            {
+              "mediaType": "application/vnd.oci.image.index.v1+json",
+              "size": 314,
+              "digest": "$(cat /workspace/workspace/__digest__)"
+            }
+          ]
+        }
+        EOF
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: deploy-actions
+  labels:
+    app: ciml
+spec:
+  inputs:
+    resources:
+      - name: workspace
+        type: git
+    params:
+      - name: imageTag
+        description: Tag of the images to be used.
+        default: "default"
+  steps:
+    - name: fix-wskdeploy-manifest
+      image: andreaf76/wskdeploy:latest
+      command:
+      - /bin/bash
+      args:
+      - -ce
+      - |
+        set -e
+        sed -i -e 's,andreaf76/ciml-action-base:1.0,andreaf76/ciml-action-base:'$(inputs.params.imageTag)',g' $(inputs.resources.workspace.path)/actions/manifest.yaml
+    - name: run-deploy
+      image: andreaf76/wskdeploy:latest
+      command:
+        - /bin/bash
+      args:
+        - $(inputs.resources.workspace.path)/actions/deploy.sh
+        - --install
+      volumeMounts:
+      - name: wskconfig
+        mountPath: "/root/.wskprops"
+        readOnly: true
+      env:
+        - name: S3_URL
+          value: s3://cimlrawdata
+        - name: S3_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: cimls3credentials
+              key: s3_access_key_id
+        - name: S3_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cimls3credentials
+              key: s3_secret_access_key
+  volumes:
+    - name: wskconfig
+      secret:
+        secretName: cimlwiskconfig
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: ciml-action-build-and-deploy
+spec:
+  params:
+    - name: imageTag
+      description: Tag of the images to be used.
+      default: "default"
+  resources:
+    - name: src
+      type: git
+    - name: builtImage
+      type: image
+  tasks:
+  - name: source-to-image-task
+    taskRef:
+      name: source-to-image
+    params:
+      - name: pathToContext
+        value: actions/wskdeploy-image
+      - name: imageTag
+        value: "$(params.imageTag)"
+    resources:
+      inputs:
+        - name: workspace
+          resource: src
+      outputs:
+        - name: builtImage
+          resource: builtImage
+  - name: deploy-to-openwhisk
+    taskRef:
+      name: deploy-actions
+    params:
+      - name: imageTag
+        value: "$(params.imageTag)"
+    runAfter:
+      - source-to-image-task
+    resources:
+      inputs:
+        - name: workspace
+          resource: src
