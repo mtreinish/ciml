@@ -5,11 +5,7 @@ packages:
     actions:
       cache-data:
         location: cache-data/__main__.py
-<<<<<<< HEAD
-        docker: andreaf76/ciml-action-base:1.1
-=======
         docker: andreaf76/ciml-action-base:latest
->>>>>>> Push to tag and latest, deploy from latest
         inputs:
           build_name:
             type: string

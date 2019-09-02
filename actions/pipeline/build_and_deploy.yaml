@@ -116,8 +116,10 @@ spec:
         mountPath: "/root/"
         readOnly: true
       env:
-        - name: S3_URL
+        - name: CIML_DATA_PATH
           value: s3://cimlrawdata
+        - name: S3_URL
+          value: https://s3.eu-geo.objectstorage.softlayer.net
         - name: S3_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:

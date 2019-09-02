@@ -41,8 +41,8 @@ metadata:
   name: cimls3credentials
 type: Opaque
 data:
-  s3_access_key_id: $(echo $S3_ACCESS_KEY_ID | base64)
-  s3_secret_access_key: $(echo $S3_SECRET_ACCESS_KEY | base64)
+  s3_access_key_id: $(echo -n $S3_ACCESS_KEY_ID | base64)
+  s3_secret_access_key: $(echo -n $S3_SECRET_ACCESS_KEY | base64)
 EOF
 # Wskdeploy credentials for deployment
 kubectl delete -n $TARGET_NAMESPACE secret/cimlwiskconfig &> /dev/null
