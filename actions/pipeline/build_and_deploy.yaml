@@ -102,20 +102,7 @@ spec:
     resources:
       - name: workspace
         type: git
-    params:
-      - name: imageTag
-        description: Tag of the images to be used.
-        default: "default"
   steps:
-    - name: fix-wskdeploy-manifest
-      image: andreaf76/wskdeploy:latest
-      command:
-      - /bin/bash
-      args:
-      - -ce
-      - |
-        set -e
-        sed -i -e 's,andreaf76/ciml-action-base:1.0,andreaf76/ciml-action-base:'$(inputs.params.imageTag)',g' $(inputs.resources.workspace.path)/actions/manifest.yaml
     - name: run-deploy
       image: andreaf76/wskdeploy:latest
       command:
@@ -193,9 +180,6 @@ spec:
   - name: deploy-to-openwhisk
     taskRef:
       name: deploy-actions
-    params:
-      - name: imageTag
-        value: latest
     runAfter:
       - source-to-image-task
     resources:

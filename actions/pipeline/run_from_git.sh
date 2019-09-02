@@ -155,9 +155,6 @@ else
     taskRef:
       name: deploy-actions
     inputs:
-      params:
-        - name: imageTag
-          value: $IMAGE_TAG
       resources:
         - name: workspace
           resourceRef:
