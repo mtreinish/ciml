@@ -68,16 +68,14 @@ def get_s3_client(s3_profile=None, s3_url=None, s3_access_key_id=None,
 
 def get_data_path(data_path=None, s3=None):
     """Data path is a string"""
-    try:
-        root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
-    except:
-        root_list = ""
-    if not data_path:
+    if not data_path or data_path.split(os.sep)[0] != "":
         try:
-            return root_list + ['data']
+            root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
         except NameError:
             # Running an interactive python, __file__ is not defined
-            return tempfile.mkdtemp(prefix='ciml').split(os.sep)
+            root_list = tempfile.mkdtemp(prefix='ciml').split(os.sep)
+    if not data_path:
+        return root_list + ['data']
     # This probably won't work on Windows
     data_path_list = data_path.split(os.sep)
     if data_path_list[0] == 's3:':
@@ -103,7 +101,7 @@ def _parse_dstat_date(date_str):
                              int(time_pieces[1]), int(time_pieces[2]))
 
 
-def _parse_dstat_file(input_io, sample_interval=None):
+def _parse_dstat_file(input_io, sample_interval=None, skiprows=6):
     """Parse a single dstat file into a DatetimeIndex.
 
     Parse a dstat file into a DatetimeIndex.
@@ -113,12 +111,7 @@ def _parse_dstat_file(input_io, sample_interval=None):
     - s is the number of samples (over time) after resampling
     - d is the number of dstat columns available
     """
-    try:
-        out = pd.read_csv(input_io, skiprows=6).set_index('time')
-    except KeyError:
-        # Depending on the version of dstat, we may have to skip 5 rows instead of 6
-        input_io.seek(0)
-        out = pd.read_csv(input_io, skiprows=5).set_index('time')
+    out = pd.read_csv(input_io, skiprows=skiprows).set_index('time')
     out.index = [_parse_dstat_date(x) for x in out.index]
     out.index = pd.DatetimeIndex(out.index)
     if sample_interval:
@@ -126,6 +119,30 @@ def _parse_dstat_file(input_io, sample_interval=None):
     # Remove any NaN from resampling
     out = out.dropna()
     return out
+
+
+def _get_data_handlers(raw_data_folder, run_uuid, use_s3=False, s3=None):
+    """Returns a file_or_stream and data_cleaner"""
+    if not use_s3:
+        os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
+        raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
+        # If a cache is found, use it
+        if os.path.isfile(raw_data_file):
+            stream_or_file = lambda: raw_data_file
+            data_cleaner = lambda: os.remove(raw_data_file)
+            return stream_or_file, data_cleaner
+    else:
+        object_key = os.sep.join(raw_data_folder[3:] + [run_uuid + '.csv.gz'])
+        try:
+            s3.head_object(Bucket=raw_data_folder[2], Key=object_key)
+            stream_or_file = lambda: s3.get_object(
+                Bucket=raw_data_folder[2], Key=object_key)['Body']
+            data_cleaner = lambda: s3.delete_object(
+                Bucket=raw_data_folder[2], Key=object_key)
+            return stream_or_file, data_cleaner
+        except s3.exceptions.ClientError:
+            # Not found, continue
+            return None, None
 
 
 def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
@@ -146,44 +163,35 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
     stream_or_file = False
     # If s3 is None, get a vanilla s3 client just for the exceptions
     s3 = s3 or get_s3_client()
-    # Check if the data is cached locally or on s3
-    if not use_s3:
-        os.makedirs(os.sep.join(raw_data_folder), exist_ok=True)
-        raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
-        # If a cache is found, use it
-        if os.path.isfile(raw_data_file):
-            stream_or_file = lambda: raw_data_file
-            data_cleaner = lambda: os.remove(raw_data_file)
-    else:
-        object_key = os.sep.join(raw_data_folder[3:] + [run_uuid + '.csv.gz'])
-        try:
-            s3.head_object(Bucket=raw_data_folder[2], Key=object_key)
-            stream_or_file = lambda: s3.get_object(
-                Bucket=raw_data_folder[2], Key=object_key)['Body']
-            data_cleaner = lambda: s3.delete_object(
-                Bucket=raw_data_folder[2], Key=object_key)
-        except s3.exceptions.ClientError:
-            # Not found, continue
-            pass
 
-    # If cached
-    if stream_or_file:
-        try:
-            with gzip.open(stream_or_file(), mode='r') as f:
-                try:
-                    if use_http:
-                        # When using remote let me know if loading from cache
-                        print("%s: dstat found in cache" % run_uuid)
-                    return _parse_dstat_file(f, sample_interval)
-                except pd.errors.ParserError:
-                    print('Corrupted data in %s, deleting.' % raw_data_file,
-                          file=sys.stderr)
-                    os.remove(raw_data_file)
-        except IOError as ioe:
-            # Something went wrong opening the file, so we won't load this run.
-            print('Run %s found in the dataset, however: %s',
-                  (run_uuid, ioe))
-            return None
+    # We check a second value of skiprows if the first one fails
+    for skiprows in [6, 5]:
+        # Check if the data is cached locally or on s3
+        stream_or_file, data_cleaner = _get_data_handlers(raw_data_folder,
+                                                          run_uuid, use_s3, s3)
+        # If cached
+        if stream_or_file:
+            try:
+                with gzip.open(stream_or_file(), mode='r') as f:
+                    try:
+                        if use_http:
+                            # When using remote let me know if loading from cache
+                            print("%s: dstat found in cache" % run_uuid)
+                        return _parse_dstat_file(f, sample_interval, skiprows)
+                    except KeyError:
+                        # Something went wrong with parsing but me may have
+                        # consumed data already - regenerate stream_or_file
+                        continue
+                    except pd.errors.ParserError:
+                        print('Corrupted data in %s, deleting.' % raw_data_file,
+                              file=sys.stderr)
+                        os.remove(raw_data_file)
+                        break
+            except IOError as ioe:
+                # Something went wrong opening the file, so we won't load this run.
+                print('Run %s found in the dataset, however: %s',
+                      (run_uuid, ioe))
+                return None
 
     # If no cache and use_http is False, nothing more we can do
     if not use_http:
@@ -200,20 +208,27 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
             continue
         # Cache the file locally
         if use_s3:
+            object_key = os.sep.join(raw_data_folder[3:] + [run_uuid + '.csv.gz'])
             s3.put_object(Bucket=raw_data_folder[2], Key=object_key,
                           Body=gzip.compress(resp.text.encode()))
         else:
             with gzip.open(raw_data_file, mode='wb') as local_cache:
                 local_cache.write(resp.text.encode())
         print("%s: dstat cached from URL" % run_uuid)
-        # And return the parse dstat
-        f = io.StringIO(resp.text)
-        try:
-            return _parse_dstat_file(f, sample_interval)
-        except pd.errors.ParserError:
-            print('Failed parsing dstat data in %s' % artifact_link,
-                  file=sys.stderr)
-            return None
+        # And return the parsed dstat
+        # We check a second value of skiprows if the first one fails
+        for skiprows in [6, 5]:
+            f = io.StringIO(resp.text)
+            try:
+                return _parse_dstat_file(f, sample_interval, skiprows)
+            except KeyError:
+                # Something went wrong with parasing but me may have
+                # consumed data already - regenerate stream_or_file
+                continue
+            except pd.errors.ParserError:
+                print('Failed parsing dstat data in %s' % artifact_link,
+                      file=sys.stderr)
+                return None
     else:
         print("%s: dstat miss from URL" % run_uuid)
         return None
@@ -381,13 +396,14 @@ def gather_and_cache_results_for_runs(runs, build_name, limit, sample_interval,
     else:
         session = session
     for count, run in enumerate(runs):
-        if count % 100 == 0:
-            # Every 100 runs save to disk so we can restore interrupted jobs.
+        if count % 50 == 0:
+            # Every 50 runs save to disk so we can restore interrupted jobs.
             save_run_uuids(".raw", no_data_runs, name="unavailable",
                            data_path=data_path, s3=s3)
             save_run_uuids(".raw", data_runs, name=build_name,
                            data_path=data_path, s3=s3)
-            print("Check-point, saved to storage %d" % len(data_runs))
+            print("Check-point %d/%d, saved %d, skipped %d" % (
+                count, len(runs), len(data_runs), len(no_data_runs)))
         if len(data_runs) == limit and limit != 0:
             return data_runs
         if run.uuid in no_data_runs:

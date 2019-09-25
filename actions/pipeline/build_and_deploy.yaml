@@ -1,0 +1,190 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Condition
+metadata:
+  name: image-source-changed
+spec:
+  params:
+    - name: path
+      description: The path to the image folder
+      type: string
+  resources:
+    - name: workspace
+      type: git
+    - name: workspace-old
+      type: git
+  check:
+    image: alpine/git
+    command:
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      cd $(resources.workspace.path)
+      HEAD=`git rev-parse @:$(params.path)`
+      echo "HEAD@$PWD: $HEAD"
+      git log -1
+      cd $(resources.workspace-old.path)
+      HEADOLD=`git rev-parse @:$(params.path)`
+      echo "HEAD@$PWD: $HEADOLD"
+      git log -1
+      test $HEAD != $HEADOLD
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: source-to-image
+  labels:
+    app: ciml
+spec:
+  inputs:
+    resources:
+      - name: workspace
+        type: git
+      - name: workspace-old
+        type: git
+    params:
+      - name: pathToDockerFile
+        description: The path to the dockerfile to build (relative to the context)
+        default: Dockerfile
+      - name: pathToContext
+        description:
+          The path to the build context, used by Kaniko - within the workspace
+        default: .
+      - name: imageTag
+        description: Tag of the images to be used.
+        default: "default"
+  outputs:
+    resources:
+      - name: builtImage
+        type: image
+        outputImageDir: /workspace/workspace/
+  steps:
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor@sha256:c6e1f98d3ee4383078929d7b23f55328f5ae2bfeb234f91da61b2e423f5a58fe
+      command:
+        - /kaniko/executor
+      args:
+        - --dockerfile=$(inputs.params.pathToDockerFile)
+        - --reproducible
+        - --destination=$(outputs.resources.builtImage.url):$(inputs.params.imageTag)
+        - --destination=$(outputs.resources.builtImage.url):latest
+        - --context=$(inputs.resources.workspace.path)/$(inputs.params.pathToContext)
+        - --digest-file=/workspace/workspace/__digest__
+    - name: build-index-json
+      image: busybox
+      command:
+      - /bin/sh
+      args:
+      - -ce
+      - |
+        set -e
+        cat <<EOF > /workspace/workspace/index.json
+        {
+          "schemaVersion": 2,
+          "manifests": [
+            {
+              "mediaType": "application/vnd.oci.image.index.v1+json",
+              "size": 314,
+              "digest": "$(cat /workspace/workspace/__digest__)"
+            }
+          ]
+        }
+        EOF
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: deploy-actions
+  labels:
+    app: ciml
+spec:
+  inputs:
+    resources:
+      - name: workspace
+        type: git
+  steps:
+    - name: run-deploy
+      image: andreaf76/wskdeploy:latest
+      command:
+        - /bin/bash
+      args:
+        - -ce
+        - |
+          $(inputs.resources.workspace.path)/actions/deploy.sh --install
+      volumeMounts:
+      - name: wskconfig
+        mountPath: "/root/"
+        readOnly: true
+      env:
+        - name: CIML_DATA_PATH
+          value: s3://cimlrawdata
+        - name: S3_URL
+          value: https://s3.eu-geo.objectstorage.softlayer.net
+        - name: S3_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: cimls3credentials
+              key: s3_access_key_id
+        - name: S3_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cimls3credentials
+              key: s3_secret_access_key
+  volumes:
+    - name: wskconfig
+      secret:
+        secretName: cimlwiskconfig
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: ciml-action-build-and-deploy
+spec:
+  params:
+    - name: imageTag
+      description: Tag of the images to be used.
+      default: "default"
+  resources:
+    - name: src
+      type: git
+    - name: src-old
+      type: git
+    - name: builtImage
+      type: image
+  tasks:
+  - name: source-to-image-task
+    taskRef:
+      name: source-to-image
+    conditions:
+      - conditionRef: image-source-changed
+        params:
+          - name: path
+            value: actions/base-image-no-tf
+        resources:
+          - name: workspace
+            resource: src
+          - name: workspace-old
+            resource: src-old
+    params:
+      - name: pathToContext
+        value: actions/base-image-no-tf
+      - name: imageTag
+        value: "$(params.imageTag)"
+    resources:
+      inputs:
+        - name: workspace
+          resource: src
+        - name: workspace-old
+          resource: src-old
+      outputs:
+        - name: builtImage
+          resource: builtImage
+  - name: deploy-to-openwhisk
+    taskRef:
+      name: deploy-actions
+    runAfter:
+      - source-to-image-task
+    resources:
+      inputs:
+        - name: workspace
+          resource: src
