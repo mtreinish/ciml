@@ -54,11 +54,14 @@ _OPTIMIZER_CLS_NAMES = {
 }
 
 
-def fixed_lenght_example(result, normalized_length=5500):
+def fixed_lenght_example(result, normalized_length=5500,
+                         aggregation_functions=None):
     """Normalize one example.
 
-    Normalize one example of data to a fixed length (L) and unroll it.
-    The input is s x d. To achieve fixed lenght:
+    Normalize one example of data to a fixed length (L).
+    The input is s x d.
+    To achieve fixed lenght:
+    - if aggregation functions are provided, apply them, or else
     - if s > L, cut each dstat column data to L
     - if s < L, pad with zeros to reach L
 
@@ -69,13 +72,19 @@ def fixed_lenght_example(result, normalized_length=5500):
     init_len = len(example)
     dstat_keys = example.keys()
 
-    # Cut or pad with zeros
-    if init_len > normalized_length:
-        example = example[:normalized_length]
-    elif init_len < normalized_length:
-        pad_length = normalized_length - init_len
-        padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
-        example = pd.concat([example, padd])
+    if aggregation_functions:
+        # Run all aggregation functions on the full example and build a Dict
+        # with the function names as keys
+        dict_example = {x.__name__:x(example) for x in aggregation_functions}
+        example = pd.Dataframe.from_dict(dict_example, orient='columns')
+    else:
+        # Cut or pad with zeros
+        if init_len > normalized_length:
+            example = example[:normalized_length]
+        elif init_len < normalized_length:
+            pad_length = normalized_length - init_len
+            padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
+            example = pd.concat([example, padd])
     return example
 
 
@@ -148,10 +157,15 @@ def filter_example(result, features_regex):
 
 
 def unroll_labels(dstat_labels, normalized_length=5500):
-    """Build labels for the unrolled example from the list of runs"""
-    # Get one run
+    """Build labels for the unrolled example from labels and num of samples"""
     return [label + str(idx) for label, idx in itertools.product(
         dstat_labels, range(normalized_length))]
+
+
+def unroll_labels_names(dstat_labels, aggregation_functions):
+    """Build labels for the unrolled example from lables and agg fns"""
+    return [label + '_' + fn.__name__ for label, fn in itertools.product(
+        dstat_labels, aggregation_functions)]
 
 
 def examples_ndarray(num_examples, num_dstat_features, normalized_length):
@@ -206,9 +220,11 @@ def get_downsampled_example_lenght(sample_interval, normalized_length=5500):
 
 
 def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s',
-                          data_path=None, s3=None):
+                          aggregation_functions=None, data_path=None, s3=None):
     """Takes a sample run from a dataset and filters and does calculations
 
+    If aggregation functions are used, the number of features is the
+    number of aggregation functions x the number of dstat features
     Returns:
     - the normalized example lenght
     - the number of dstat features
@@ -216,7 +232,9 @@ def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s',
     """
     # Normalized lenght before resampling
     normalized_length = 5500
-    if sample_interval:
+    if aggregation_functions:
+        normalized_length = len(aggregation_functions)
+    elif sample_interval:
         # Calculate the desired normalized lenght after resample
         normalized_length = get_downsampled_example_lenght(
             sample_interval, normalized_length)
@@ -226,14 +244,19 @@ def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s',
         sample_run, sample_interval, data_path=data_path, s3=s3)
     filtered_sample_result = filter_example(sample_result, features_regex)
     filtered_dstat_labels = filtered_sample_result['dstat'].columns
-    unrolled_labels = unroll_labels(filtered_dstat_labels, normalized_length)
+    if aggregation_functions:
+        unrolled_labels = unroll_labels_names(filtered_dstat_labels,
+                                            aggregation_functions)
+    else:
+        unrolled_labels = unroll_labels(filtered_dstat_labels,
+                                        normalized_length)
     return normalized_length, len(filtered_dstat_labels), unrolled_labels
 
 
 def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
                     features_regex, sample_interval='1s', class_label='status',
-                    visualize=False, data_path=None, target_data_path=None,
-                    s3=None):
+                    aggregation_functions=None, visualize=False, data_path=None,
+                    target_data_path=None, s3=None):
     """Takes a dataset and filters and does the magic
 
     Loads the run ids from the dataset configuration.
@@ -277,7 +300,8 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
         result = filter_example(result, features_regex)
 
         # Normalize data
-        example = fixed_lenght_example(result, normalized_length)
+        example = fixed_lenght_example(result, normalized_length,
+                                       aggregation_functions)
 
         vector = unroll_example(example, normalized_length)
 
@@ -381,6 +405,17 @@ def dataset_split_filters(size, training, dev):
         test_idx = list(set(non_training_idx) - set(dev_idx))
     return training_idx, dev_idx, test_idx
 
+def resolve_aggregation_function(function_name):
+    # Resolve an aggregation function name to a function
+    # Searches first numpy, then this module
+    if hasattr(np, function_name):
+        return getattr(np, function_name)
+    elif hasattr(sys.modules[__name__], function_name):
+        return getattr(sys.modules[__name__], function_name)
+    else:
+        raise NameError("Could not find function name %s in 'numpy' or %s",
+                        function_name, sys.modules[__name__])
+
 @click.command()
 @click.option('--dataset', default="dataset",
               help="Name of the dataset folder.")
@@ -408,9 +443,12 @@ def dataset_split_filters(size, training, dev):
               help='Endpoint URL for the s3 storage')
 @click.option('--data-plots-folder', default="/tmp",
               help="Folder where plots are stored")
+@click.option('--aggregation-functions', default=None,
+              help="List of aggregation functions to apply to each sample")
 def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
                   class_label, tdt_split, force, visualize, data_path,
-                  target_data_path, s3_profile, s3_url, data_plots_folder):
+                  target_data_path, s3_profile, s3_url, data_plots_folder,
+                  aggregation_functions):
     # s3 support
     s3 = gather_results.get_s3_client(s3_url=s3_url, s3_profile=s3_profile)
 
@@ -451,12 +489,14 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
     # Calculate normalized and filtered dimensions and labels
     normalized_length, num_dstat_features, labels = \
         data_sizes_and_labels(runs[0], features_regex, sample_interval,
+                              aggregation_functions=aggregation_functions,
                               data_path=data_path, s3=s3)
     model_config = {
         'build_name': build_name,
         'sample_interval': sample_interval,
         'features_regex': features_regex,
         'class_label': class_label,
+        'aggregation_functions': aggregation_functions,
         'training_set': training,
         'dev_set': dev,
         'test_set': test,
@@ -473,6 +513,10 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
                                      data_path=target_data_path, s3=s3)
     print("Stored %d run IDs in the model %s config" % (len(runs), dataset))
 
+    # Resolve the aggregation function names to functions
+    resolved_agg_fn = [resolve_aggregation_function(x) for x
+                       in aggregation_functions]
+
     datasets = {}
     # Training must come first so we calculate normalization params
     for data_type in ['training', 'dev', 'test']:
@@ -480,6 +524,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
             dataset, normalized_length, num_dstat_features, data_type,
             features_regex=features_regex,
             sample_interval=sample_interval, class_label=class_label,
+            aggregation_functions=resolved_agg_fn,
             visualize=visualize, data_path=data_path,
             target_data_path=target_data_path, s3=s3)
         datasets[data_type] = data
