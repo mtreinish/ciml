@@ -29,6 +29,9 @@ from ciml import svm_trainer
 from ciml import tf_trainer
 
 import click
+from mpl_toolkits.mplot3d import Axes3D # noqa: F401 unused import
+import matplotlib.cm as cmx
+import matplotlib.colors as pltcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -73,10 +76,11 @@ def fixed_lenght_example(result, normalized_length=5500,
     dstat_keys = example.keys()
 
     if aggregation_functions:
-        # Run all aggregation functions on the full example and build a Dict
-        # with the function names as keys
-        dict_example = {x.__name__:x(example) for x in aggregation_functions}
-        example = pd.Dataframe.from_dict(dict_example, orient='columns')
+        # Run all aggregation functions on each DataFrame column in the example
+        agg_dict = {column:[x(example[column]) for x in aggregation_functions]
+                    for column
+                    in example.columns}
+        example = pd.DataFrame.from_dict(agg_dict)
     else:
         # Cut or pad with zeros
         if init_len > normalized_length:
@@ -164,7 +168,7 @@ def unroll_labels(dstat_labels, normalized_length=5500):
 
 def unroll_labels_names(dstat_labels, aggregation_functions):
     """Build labels for the unrolled example from lables and agg fns"""
-    return [label + '_' + fn.__name__ for label, fn in itertools.product(
+    return [label + '_' + fn for label, fn in itertools.product(
         dstat_labels, aggregation_functions)]
 
 
@@ -313,7 +317,7 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
         classes.append(status)
 
         # Plot from figures
-        if visualize:
+        if visualize and not aggregation_functions:
             # Prepare some more data if we are going to visualize
             sizes.append((result['dstat'].shape[0], status))
             figure_name = sample_interval + "_%s_" + str(count)
@@ -360,7 +364,50 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
         'classes': classes
     }
 
+    if visualize and aggregation_functions and len(examples) > 0:
+        if len(aggregation_functions) > 3:
+            print('Visualization skipped, cannot represent more than 3D')
+            sys.exit(1)
+        else:
+            fig = plt.figure()
+            if len(aggregation_functions) == 3:
+                ax = fig.add_subplot(111, projection='3d')
+            else:
+                ax = fig.add_subplot()
+
+            # Build a dict [class] -> [int ID]
+            unique_classes = list(set(classes))
+            dict_classes = dict(zip(unique_classes,
+                                    list(range(len(unique_classes)))))
+
+            # Setup colours
+            cm = plt.get_cmap('jet')
+            cNorm = pltcolors.Normalize(
+                vmin=0, vmax=len(unique_classes))
+            scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cm)
+
+            # Scatter the data
+            for ii in range(len(examples)):
+                ax.scatter(*examples[ii], marker='o',
+                           c=scalarMap.to_rgba(dict_classes[classes[ii]]))
+
+            # Set axis labels
+            ax.set_xlabel(aggregation_functions[0].__name__)
+            if len(aggregation_functions) > 1:
+                ax.set_ylabel(aggregation_functions[1].__name__)
+            if len(aggregation_functions) > 2:
+                ax.set_zlabel(aggregation_functions[2].__name__)
+
+            # scalarMap.set_array(classes)
+            # fig.colorbar(scalarMap)
+
+            # Save the plot
+            fig.savefig(os.sep.join(
+                data_plots_folder + [data_type + "_3d_plot"]))
+            plt.close(fig)
+
     return data, figure_sizes
+
 
 def mqtt_trainer():
     event_queue = queue.Queue()
@@ -443,7 +490,7 @@ def resolve_aggregation_function(function_name):
               help='Endpoint URL for the s3 storage')
 @click.option('--data-plots-folder', default="/tmp",
               help="Folder where plots are stored")
-@click.option('--aggregation-functions', default=None,
+@click.option('--aggregation-functions', default=None, multiple=True,
               help="List of aggregation functions to apply to each sample")
 def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
                   class_label, tdt_split, force, visualize, data_path,
@@ -558,9 +605,8 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
                                     data_path=target_data_path, s3=s3,
                                     **datasets[data_type])
 
-
     # Plot some more figures
-    if visualize:
+    if visualize and not aggregation_functions:
         for n in range(n_examples.shape[0]):
             figure_name = sample_interval + "_%s_" + str(n)
             unrolled_norm_plot = pd.Series(n_examples[n]).plot()
