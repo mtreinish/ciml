@@ -373,7 +373,7 @@ def prepare_dataset(dataset, normalized_length, num_dstat_features, data_type,
             if len(aggregation_functions) == 3:
                 ax = fig.add_subplot(111, projection='3d')
             else:
-                ax = fig.add_subplot()
+                ax = fig.add_subplot(111)
 
             # Build a dict [class] -> [int ID]
             unique_classes = list(set(classes))
@@ -808,3 +808,8 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
             eval_loss = train_and_eval()
     else:
         eval_loss = train_and_eval()
+
+if __name__ == '__main__':
+    function_name = sys.argv[1]
+    del sys.argv[1]
+    globals()[function_name]()
