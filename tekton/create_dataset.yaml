@@ -1,0 +1,90 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: ciml-create-dataset
+spec:
+  inputs:
+    params:
+    - name: dataset
+      description: Name of the dataset to create
+    - name: build-name
+      description: Name of the CI build to use
+      default: tempest-full
+    - name: slicer
+      description: Slice of the data to use
+      default: ":5000"
+    - name: sample-interval
+      description: Interval for data downsampling. Default is no downsampling.
+      default: 1s
+    - name: features-regex
+      description: Regular expression to filter dstat features (columns)
+      default: "(1m)"
+    - name: class-label
+      description: DB data used to build classes (status, node_provider, node_provider_all)
+      default: status
+    - name: tdt-split
+      description: training/data/test split ration for the dataset
+      default: "7 0 3"
+    - name: aggregation-functions
+      description: Space separate list of aggregation functions
+      default: ""
+    - name: force
+      description: Recreate the dataset if found. "true" or "false"
+      default: "false"
+    - name: data-path
+      description: Where to load raw data from
+      default: s3://cimlrawdata
+    - name: target-data-path
+      description: Where to write the dataset
+      default: s3://cimldatasets
+    resources:
+    - name: ciml
+      type: git
+  steps:
+
+  - name: run-ciml
+    image: andreaf/ciml-action-base
+    workingdir: $(inputs.resources.ciml.path)
+    env:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: s3storage
+            key: aws_access_key_id
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: s3storage
+            key: aws_secret_access_key
+    command:
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      if [ "$(inputs.params.dataset)" == "" ]; then
+        echo "Fatal: Please specify a dataset name"
+        exit 1
+      fi
+
+      EXTRA_PARAMS=""
+      if [ "$(inputs.params.aggregation-functions)" == "" ]; then
+        for agg_fn in $(inputs.params.aggregation-functions); do
+          EXTRA_PARAMS+=" --aggregation-functions $agg_fn"
+        done
+      fi
+
+      if [ "$(inputs.params.force)" == "true" ]; then
+        EXTRA_PARAMS+=" --force"
+      fi
+
+      python ciml/trainer.py build_dataset \
+        --dataset "$(inputs.params.dataset)" \
+        --build-name "$(inputs.params.build-name)" \
+        --slicer "$(inputs.params.slicer)" \
+        --sample-interval "$(inputs.params.sample-interval)" \
+        --features-regex "$(inputs.params.features-regex)" \
+        --class-label "$(inputs.params.class-label)" \
+        --tdt-split "$(inputs.params.tdt-split)" \
+        --data-path "$(inputs.params.data-path)" \
+        --target-data-path "$(inputs.params.target-data-path)" \
+        $EXTRA_PARAMS
