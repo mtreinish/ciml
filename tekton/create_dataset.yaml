@@ -43,8 +43,7 @@ spec:
   steps:
 
   - name: run-ciml
-    image: us.icr.io/knative/ciml-base
-    workingdir: $(inputs.resources.ciml.path)
+    image: us.icr.io/ciml/datasets:manual
     env:
       - name: AWS_ACCESS_KEY_ID
         valueFrom:
@@ -56,8 +55,10 @@ spec:
           secretKeyRef:
             name: s3storage
             key: aws_secret_access_key
+      - name: PYTHONPATH
+        value: $(inputs.resources.ciml.path)
     command:
-    - /bin/sh
+    - /bin/bash
     args:
     - -ce
     - |

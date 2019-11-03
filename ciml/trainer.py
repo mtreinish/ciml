@@ -35,13 +35,16 @@ import matplotlib.colors as pltcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from tensorflow.python.training import adagrad
-from tensorflow.python.training import adam
-from tensorflow.python.training import ftrl
-from tensorflow.python.training import gradient_descent
-from tensorflow.python.training import rmsprop
-from tensorflow.python.training import proximal_adagrad
+try:
+    import tensorflow as tf
+    from tensorflow.python.training import adagrad
+    from tensorflow.python.training import adam
+    from tensorflow.python.training import ftrl
+    from tensorflow.python.training import gradient_descent
+    from tensorflow.python.training import rmsprop
+    from tensorflow.python.training import proximal_adagrad
+except ImportError:
+    print("Warning: Tensorflow could not be imported")
 
 
 default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
