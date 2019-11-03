@@ -47,20 +47,20 @@ try:
     from tensorflow.python.training import gradient_descent
     from tensorflow.python.training import rmsprop
     from tensorflow.python.training import proximal_adagrad
+    _OPTIMIZER_CLS_NAMES = {
+        'Adagrad': adagrad.AdagradOptimizer,
+        'Adam': adam.AdamOptimizer,
+        'Ftrl': ftrl.FtrlOptimizer,
+        'RMSProp': rmsprop.RMSPropOptimizer,
+        'SGD': gradient_descent.GradientDescentOptimizer,
+        'ProximalAdagrad': proximal_adagrad.ProximalAdagradOptimizer
+    }
 except ImportError:
     print("Warning: could not import Tensorflow")
+    _OPTIMIZER_CLS_NAMES = {}
 
 default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
-
-_OPTIMIZER_CLS_NAMES = {
-    'Adagrad': adagrad.AdagradOptimizer,
-    'Adam': adam.AdamOptimizer,
-    'Ftrl': ftrl.FtrlOptimizer,
-    'RMSProp': rmsprop.RMSPropOptimizer,
-    'SGD': gradient_descent.GradientDescentOptimizer,
-    'ProximalAdagrad': proximal_adagrad.ProximalAdagradOptimizer
-}
 
 
 def fixed_lenght_example(result, normalized_length=5500,
