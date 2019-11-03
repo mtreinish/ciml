@@ -24,9 +24,12 @@ warnings.filterwarnings("ignore")
 
 from ciml import gather_results
 from ciml import listener
-from ciml import nn_trainer
-from ciml import svm_trainer
-from ciml import tf_trainer
+try:
+    from ciml import nn_trainer
+    from ciml import svm_trainer
+    from ciml import tf_trainer
+except ImportError:
+    print("Warning: could not import CIML trainers")
 
 import click
 from mpl_toolkits.mplot3d import Axes3D # noqa: F401 unused import
@@ -35,6 +38,7 @@ import matplotlib.colors as pltcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
 try:
     import tensorflow as tf
     from tensorflow.python.training import adagrad
@@ -44,8 +48,7 @@ try:
     from tensorflow.python.training import rmsprop
     from tensorflow.python.training import proximal_adagrad
 except ImportError:
-    print("Warning: Tensorflow could not be imported")
-
+    print("Warning: could not import Tensorflow")
 
 default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
                   'subunit2sql')
