@@ -43,7 +43,7 @@ spec:
   steps:
 
   - name: run-ciml
-    image: andreaf/ciml-action-base
+    image: us.icr.io/knative/ciml-base
     workingdir: $(inputs.resources.ciml.path)
     env:
       - name: AWS_ACCESS_KEY_ID

@@ -60,14 +60,12 @@ spec:
         outputImageDir: /workspace/workspace/
   steps:
     - name: build-and-push
-      image: gcr.io/kaniko-project/executor@sha256:c6e1f98d3ee4383078929d7b23f55328f5ae2bfeb234f91da61b2e423f5a58fe
+      image: gcr.io/kaniko-project/executor:latest
       command:
         - /kaniko/executor
       args:
         - --dockerfile=$(inputs.params.pathToDockerFile)
-        - --reproducible
         - --destination=$(outputs.resources.builtImage.url):$(inputs.params.imageTag)
-        - --destination=$(outputs.resources.builtImage.url):latest
         - --context=$(inputs.resources.workspace.path)/$(inputs.params.pathToContext)
         - --digest-file=/workspace/workspace/__digest__
     - name: build-index-json
