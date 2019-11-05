@@ -86,7 +86,7 @@ spec:
         --sample-interval "$(inputs.params.sample-interval)" \
         --features-regex "$(inputs.params.features-regex)" \
         --class-label "$(inputs.params.class-label)" \
-        --tdt-split "$(inputs.params.tdt-split)" \
+        --tdt-split $(inputs.params.tdt-split) \
         --data-path "$(inputs.params.data-path)" \
         --target-data-path "$(inputs.params.target-data-path)" \
         $EXTRA_PARAMS
