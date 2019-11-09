@@ -816,7 +816,7 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
                                           sub_folder=experiment)
 
         # Run a prediction on the "dev" set, which we use as prod, and store it
-        prod_data = gather_results.load_dataset(dataset=, 'dev',
+        prod_data = gather_results.load_dataset(dataset, 'dev',
                                                 data_path=data_path, s3=s3)
         prod_size = len(prod_data['example_ids'])
 
