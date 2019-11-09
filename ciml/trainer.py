@@ -12,6 +12,14 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as pltcolors
+import matplotlib.cm as cmx
+import click
+from ciml import listener
+from ciml import gather_results
 import datetime
 import itertools
 import os
@@ -22,8 +30,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-from ciml import gather_results
-from ciml import listener
 try:
     from ciml import nn_trainer
     from ciml import svm_trainer
@@ -31,13 +37,7 @@ try:
 except ImportError:
     print("Warning: could not import CIML trainers")
 
-import click
-from mpl_toolkits.mplot3d import Axes3D # noqa: F401 unused import
-import matplotlib.cm as cmx
-import matplotlib.colors as pltcolors
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 
 try:
     import tensorflow as tf
@@ -83,7 +83,7 @@ def fixed_lenght_example(result, normalized_length=5500,
 
     if aggregation_functions:
         # Run all aggregation functions on each DataFrame column in the example
-        agg_dict = {column:[x(example[column]) for x in aggregation_functions]
+        agg_dict = {column: [x(example[column]) for x in aggregation_functions]
                     for column
                     in example.columns}
         example = pd.DataFrame.from_dict(agg_dict)
@@ -93,7 +93,8 @@ def fixed_lenght_example(result, normalized_length=5500,
             example = example[:normalized_length]
         elif init_len < normalized_length:
             pad_length = normalized_length - init_len
-            padd = pd.DataFrame(0, index=np.arange(pad_length), columns=dstat_keys)
+            padd = pd.DataFrame(0, index=np.arange(
+                pad_length), columns=dstat_keys)
             example = pd.concat([example, padd])
     return example
 
@@ -209,7 +210,8 @@ def normalize_dataset(examples, labels, params=None):
             mean_fd = np.mean(feature_data)
             max_min_fd = np.max(feature_data) - np.min(feature_data)
             # In case of just one example, or
-            if max_min_fd == 0: max_min_fd = 1
+            if max_min_fd == 0:
+                max_min_fd = 1
             params[labels[n]] = (mean_fd, max_min_fd)
         _features[n] = list(
             map(lambda x: (x - mean_fd) / max_min_fd, feature_data))
@@ -256,7 +258,7 @@ def data_sizes_and_labels(sample_run, features_regex, sample_interval='1s',
     filtered_dstat_labels = filtered_sample_result['dstat'].columns
     if aggregation_functions:
         unrolled_labels = unroll_labels_names(filtered_dstat_labels,
-                                            aggregation_functions)
+                                              aggregation_functions)
     else:
         unrolled_labels = unroll_labels(filtered_dstat_labels,
                                         normalized_length)
@@ -441,6 +443,7 @@ def mqtt_trainer():
                                              classes)
         dstat_model.train()
 
+
 def dataset_split_filters(size, training, dev):
     # Separate training, dev and test sets by building randomised lists
     # of indexes that can be used for examples, example_ids and classes
@@ -458,6 +461,7 @@ def dataset_split_filters(size, training, dev):
         test_idx = list(set(non_training_idx) - set(dev_idx))
     return training_idx, dev_idx, test_idx
 
+
 def resolve_aggregation_function(function_name):
     # Resolve an aggregation function name to a function
     # Searches first numpy, then this module
@@ -468,6 +472,7 @@ def resolve_aggregation_function(function_name):
     else:
         raise NameError("Could not find function name %s in 'numpy' or %s",
                         function_name, sys.modules[__name__])
+
 
 @click.command()
 @click.option('--dataset', default="dataset",
@@ -512,7 +517,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
         sys.exit(1)
 
     # Validate tdt-split
-    training, dev, test = map(lambda x: x/10, tdt_split)
+    training, dev, test = map(lambda x: x / 10, tdt_split)
     if not (training + dev + test) == 1:
         print("Training (%d) + dev (%d) + test (%d) != 10" % tdt_split)
         sys.exit(1)
@@ -521,7 +526,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
     runs = gather_results.load_run_uuids('.raw', name=build_name,
                                          data_path=data_path, s3=s3)
     # Apply the slice
-    slice_fn = lambda x: int(x.strip()) if x.strip() else None
+    def slice_fn(x): return int(x.strip()) if x.strip() else None
     slice_object = slice(*map(slice_fn, slicer.split(":")))
     runs = np.array(runs[slice_object])
     print("Obtained %d runs for build %s" % (len(runs), build_name))
@@ -618,7 +623,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
             unrolled_norm_plot = pd.Series(n_examples[n]).plot()
             fig = unrolled_norm_plot.get_figure()
             axes = plt.gca()
-            axes.set_ylim([-1,1])
+            axes.set_ylim([-1, 1])
             fig.savefig(os.sep.join(
                 [data_plots_folder] + [figure_name % "normalized"]))
             plt.close(fig)
@@ -786,8 +791,8 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
         # Train
         tf_trainer.get_training_method(estimator)(
             input_fn=tf_trainer.get_input_fn(shuffle=True,
-                batch_size=batch_size, num_epochs=num_epochs,
-                labels=labels, **training_data), steps=steps)
+                                             batch_size=batch_size, num_epochs=num_epochs,
+                                             labels=labels, **training_data), steps=steps)
         # Eval on the experiment dataset + any other requested
         eval_sets = [dataset]
         eval_sets.extend(eval_dataset)
@@ -795,6 +800,8 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
             eval_data = gather_results.load_dataset(eval_dataset_name, 'test',
                                                     data_path=data_path, s3=s3)
             eval_size = len(eval_data['example_ids'])
+
+            # Run tf evaluation and store the metrics
             print(
                 "Evaluation data shape: (%d, %d)" % eval_data['examples'].shape)
             eval_loss = estimator.evaluate(
@@ -808,12 +815,29 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
             gather_results.save_data_json(dataset, eval_loss, eval_name,
                                           sub_folder=experiment)
 
+        # Run a prediction on the "dev" set, which we use as prod, and store it
+        prod_data = gather_results.load_dataset(dataset=, 'dev',
+                                                data_path=data_path, s3=s3)
+        prod_size = len(prod_data['example_ids'])
+
+        prediction = estimator.predict(
+            input_fn=tf_trainer.get_input_fn(
+                batch_size=prod_size, num_epochs=1,
+                labels=labels, **prod_data))
+
+        prediction_name = "prediction_" + dataset
+        gather_results.save_data_json(
+            dataset, zip(prod_data['example_ids'],
+                         prediction, prod_data['classes']),
+            prediction_name, sub_folder=experiment)
+
     # Now do the training and evalutation
     if gpu:
         with tf.device('/gpu:0'):
             eval_loss = train_and_eval()
     else:
         eval_loss = train_and_eval()
+
 
 if __name__ == '__main__':
     function_name = sys.argv[1]
