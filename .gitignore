@@ -64,3 +64,10 @@ actions/cache-data/__main__.py
 # FfDL
 ffdl/ciml.zip
 ffdl/manifest.yaml
+
+# Jupyter checkpoints
+.ipynb_checkpoints
+.venv*
+
+# Mac folder file
+.DS_Store
