@@ -40,8 +40,6 @@ spec:
     resources:
       - name: workspace
         type: git
-      - name: workspace-old
-        type: git
     params:
       - name: pathToDockerFile
         description: The path to the dockerfile to build (relative to the context)
@@ -57,7 +55,6 @@ spec:
     resources:
       - name: builtImage
         type: image
-        outputImageDir: /workspace/workspace/
   steps:
     - name: build-and-push
       image: gcr.io/kaniko-project/executor:latest
@@ -67,27 +64,6 @@ spec:
         - --dockerfile=$(inputs.params.pathToDockerFile)
         - --destination=$(outputs.resources.builtImage.url):$(inputs.params.imageTag)
         - --context=$(inputs.resources.workspace.path)/$(inputs.params.pathToContext)
-        - --digest-file=/workspace/workspace/__digest__
-    - name: build-index-json
-      image: busybox
-      command:
-      - /bin/sh
-      args:
-      - -ce
-      - |
-        set -e
-        cat <<EOF > /workspace/workspace/index.json
-        {
-          "schemaVersion": 2,
-          "manifests": [
-            {
-              "mediaType": "application/vnd.oci.image.index.v1+json",
-              "size": 314,
-              "digest": "$(cat /workspace/workspace/__digest__)"
-            }
-          ]
-        }
-        EOF
 ---
 apiVersion: tekton.dev/v1alpha1
 kind: Task
@@ -161,8 +137,6 @@ spec:
         resources:
           - name: workspace
             resource: src
-          - name: workspace-old
-            resource: src-old
     params:
       - name: pathToContext
         value: actions/base-image-no-tf

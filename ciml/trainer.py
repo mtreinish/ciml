@@ -825,10 +825,18 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
                 batch_size=prod_size, num_epochs=1,
                 labels=labels, **prod_data))
 
+        # Convert bytes fields to string for serialization
+        serializable_pred = []
+        for pred in prediction:
+            _classes = pred['classes']
+            pred['classes'] = [x.decode("utf-8") for x in _classes]
+            serializable_pred.append(pred)
+
         prediction_name = "prediction_" + dataset
+        pred_data = zip(prod_data['example_ids'], serializable_pred,
+                        prod_data['classes'])
         gather_results.save_data_json(
-            dataset, zip(prod_data['example_ids'],
-                         prediction, prod_data['classes']),
+            dataset, [x for x in pred_data],
             prediction_name, sub_folder=experiment)
 
     # Now do the training and evalutation
