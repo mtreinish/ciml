@@ -776,7 +776,7 @@ def local_trainer(dataset, experiment, eval_dataset, gpu, debug, data_path,
         label_vocabulary = set(['rax-iad', 'ovh-bhs1', 'packethost-us-west-1',
                                 'rax-dfw', 'vexxhost-ca-ymq-1', 'ovh-gra1',
                                 'limestone-regionone', 'inap-mtl01', 'rax-ord',
-                                'vexxhost-sjc1'])
+                                'vexxhost-sjc1', 'fortnebula-regionone'])
     else:
         label_vocabulary = None
 
