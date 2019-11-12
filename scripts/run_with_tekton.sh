@@ -11,7 +11,7 @@ OUTPUT_BUCKET=${OUTPUT_BUCKET:-cimlodsceu2019output}
 TRAINING_LOG=${TRAINING_LOG:-training_log.csv}
 
 function _running_tasks() {
-  kubectl get tr -l "ciml/run.uuid: $RUN_UUID"  2> /dev/null || echo "STATUS" | egrep -v '(STATUS|Succeeded|Failed)' | wc -l
+  kubectl get tr -l "ciml/run.uuid=$RUN_UUID"  2> /dev/null | egrep -c -v '(NAME|Succeeded|Failed)' || true
 }
 
 function _wait_for_slot(){
