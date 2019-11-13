@@ -52,12 +52,14 @@ EOF
 
 function run_trainings() {
   mkdir -p ${TRAINING_LOG_PATH}/${RUN_UUID}
-  for dataset in $(cat ${DATASETS}); do
-    for experiment in $(cat ${EXPERIMENTS}); do
-      if [ "$dataset" == "__experiments__" ]; then
-        dataset=${experiment%%;*}
-        experiment=${experiment#*;}
-      fi
+  for _dataset in $(cat ${DATASETS}); do
+    for _experiment in $(cat ${EXPERIMENTS}); do
+      if [ "${_dataset}" == "__experiments__" ]; then
+        dataset=${_experiment%%;*}
+        experiment=${_experiment#*;}
+      else
+        dataset=${_dataset}
+        experiment=${_experiment}
       echo "=== Running training $dataset / $experiment"
       # Wait for a slot, do not overload the cluster
       _wait_for_slot
