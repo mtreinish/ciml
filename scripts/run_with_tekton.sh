@@ -53,6 +53,10 @@ EOF
 function run_trainings() {
   for dataset in $(cat ${DATASETS}); do
     for experiment in $(cat ${EXPERIMENTS}); do
+      if [ "$dataset" == "__experiments__" ]; then
+        dataset=${experiment%%;*}
+        experiment=${experiment#;}
+      fi
       echo "=== Running training $dataset / $experiment"
       # Wait for a slot, do not overload the cluster
       _wait_for_slot
