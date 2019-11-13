@@ -60,6 +60,7 @@ function run_trainings() {
       else
         dataset=${_dataset}
         experiment=${_experiment}
+      fi
       echo "=== Running training $dataset / $experiment"
       # Wait for a slot, do not overload the cluster
       _wait_for_slot
