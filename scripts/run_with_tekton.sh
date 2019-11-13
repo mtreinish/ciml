@@ -8,7 +8,7 @@ DATASETS=${DATASETS:-datasets}
 EXPERIMENTS=${EXPERIMENTS:-experiments}
 DATA_BUCKET=${DATA_BUCKET:-cimlodsceu2019}
 OUTPUT_BUCKET=${OUTPUT_BUCKET:-cimlodsceu2019output}
-TRAINING_LOG=${TRAINING_LOG:-training_log.csv}
+TRAINING_LOG_PATH=${TRAINING_LOG_PATH:-.}
 
 function _running_tasks() {
   kubectl get tr -l "ciml/run.uuid=$RUN_UUID"  2> /dev/null | egrep -c -v '(NAME|Succeeded|Failed)' || true
@@ -58,7 +58,7 @@ function run_trainings() {
       _wait_for_slot
       # Generate UUID and create the log
       UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-      echo "$(date +'%F %R');$dataset;$experiment;$UUID" >> $TRAINING_LOG
+      echo "$(date +'%F %R');$dataset;$experiment;$UUID" >> ${TRAINING_LOG_PATH}/${RUN_UUID}/training_log.csv
       # Create Tekton resources
       DATASET_BUCKET_RESOURCE=$(_create_bucket_resource $DATA_BUCKET $dataset)
       OUTPUT_BUCKET_RESOURCE=$(_create_bucket_resource $OUTPUT_BUCKET $UUID)

@@ -45,8 +45,8 @@ spec:
       value: /data/datasets
     - name: EXPERIMENTS
       value: /data/experiments
-    - name: TRAINING_LOG
-      value: $(outputs.resources.runlog.path)/training_log.csv
+    - name: TRAINING_LOG_PATH
+      value: $(outputs.resources.runlog.path)
     volumeMounts:
     - name: ciml-data
       mountPath: /data
