@@ -51,6 +51,7 @@ EOF
 }
 
 function run_trainings() {
+  mkdir -p ${TRAINING_LOG_PATH}/${RUN_UUID}
   for dataset in $(cat ${DATASETS}); do
     for experiment in $(cat ${EXPERIMENTS}); do
       if [ "$dataset" == "__experiments__" ]; then
