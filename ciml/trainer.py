@@ -444,22 +444,33 @@ def mqtt_trainer():
         dstat_model.train()
 
 
-def dataset_split_filters(size, training, dev):
+def dataset_split_filters(size, training, dev, data_path=None, s3=None):
     # Separate training, dev and test sets by building randomised lists
     # of indexes that can be used for examples, example_ids and classes
-    all_indexes = range(size)
-    training_idx = []
-    dev_idx = []
-    test_idx = []
-    if training > 0:
-        training_idx = pd.Series(all_indexes).sample(
-            int(size * training)).values
-    non_training_idx = list(set(all_indexes) - set(training_idx))
-    if dev > 0:
-        dev_idx = pd.Series(non_training_idx).sample(int(size * dev)).values
-    if (training + dev) < 1:
-        test_idx = list(set(non_training_idx) - set(dev_idx))
-    return training_idx, dev_idx, test_idx
+    splits = gather_results.load_splits(size, training, dev,
+                                        data_path=data_path, s3=s3)
+    if not splits:
+        print("Splits not found. Size %d, t %.1f, d %.1f" % (
+            size, training, dev))
+        all_indexes = range(size)
+        training_idx = []
+        dev_idx = []
+        test_idx = []
+        if training > 0:
+            training_idx = pd.Series(all_indexes).sample(
+                int(size * training)).values
+        non_training_idx = list(set(all_indexes) - set(training_idx))
+        if dev > 0:
+            dev_idx = pd.Series(non_training_idx).sample(
+                int(size * dev)).values
+        if (training + dev) < 1:
+            test_idx = list(set(non_training_idx) - set(dev_idx))
+        gather_results.save_splits(
+            dict(training=training_idx, dev=dev_idx, test=test_idx),
+            size, training, dev, data_path=data_path, s3=s3)
+        print("Splits saved. Size %d, t %.1f, d %.1f" % (size, training, dev))
+        return training_idx, dev_idx, test_idx
+    return splits['training'], splits['dev'], splits['test']
 
 
 def resolve_aggregation_function(function_name):
@@ -518,7 +529,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 
     # Validate tdt-split
     training, dev, test = map(lambda x: x / 10, tdt_split)
-    if not (training + dev + test) == 1:
+    if not sum(tdt_split) == 10:
         print("Training (%d) + dev (%d) + test (%d) != 10" % tdt_split)
         sys.exit(1)
 
@@ -533,7 +544,7 @@ def build_dataset(dataset, build_name, slicer, sample_interval, features_regex,
 
     # Split the runs in training, dev and test
     training_idx, dev_idx, test_idx = dataset_split_filters(
-        len(runs), training, dev)
+        len(runs), training, dev, data_path=target_data_path, s3=s3)
     np_runs = np.array(runs)
     # Saving dataset metadata
     gather_results.save_run_uuids(dataset, np_runs[training_idx],
