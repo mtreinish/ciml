@@ -12,6 +12,14 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from subunit2sql.db import api
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
+import requests
+import pandas as pd
+import numpy as np
+import click
+import boto3
 import collections
 import datetime
 import gzip
@@ -24,16 +32,6 @@ import sys
 import tempfile
 import warnings
 warnings.filterwarnings("ignore")
-
-
-import boto3
-import click
-import numpy as np
-import pandas as pd
-import requests
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from subunit2sql.db import api
 
 
 default_db_uri = ('mysql+pymysql://query:query@logstash.openstack.org/'
@@ -70,7 +68,8 @@ def get_data_path(data_path=None, s3=None):
     """Data path is a string"""
     if not data_path or data_path.split(os.sep)[0] != "":
         try:
-            root_list = [os.path.dirname(os.path.realpath(__file__)), os.pardir]
+            root_list = [os.path.dirname(
+                os.path.realpath(__file__)), os.pardir]
         except NameError:
             # Running an interactive python, __file__ is not defined
             root_list = tempfile.mkdtemp(prefix='ciml').split(os.sep)
@@ -128,16 +127,16 @@ def _get_data_handlers(raw_data_folder, run_uuid, use_s3=False, s3=None):
         raw_data_file = os.sep.join(raw_data_folder + [run_uuid + '.csv.gz'])
         # If a cache is found, use it
         if os.path.isfile(raw_data_file):
-            stream_or_file = lambda: raw_data_file
-            data_cleaner = lambda: os.remove(raw_data_file)
+            def stream_or_file(): return raw_data_file
+            def data_cleaner(): return os.remove(raw_data_file)
             return stream_or_file, data_cleaner
     else:
         object_key = os.sep.join(raw_data_folder[3:] + [run_uuid + '.csv.gz'])
         try:
             s3.head_object(Bucket=raw_data_folder[2], Key=object_key)
-            stream_or_file = lambda: s3.get_object(
+            def stream_or_file(): return s3.get_object(
                 Bucket=raw_data_folder[2], Key=object_key)['Body']
-            data_cleaner = lambda: s3.delete_object(
+            def data_cleaner(): return s3.delete_object(
                 Bucket=raw_data_folder[2], Key=object_key)
             return stream_or_file, data_cleaner
         except s3.exceptions.ClientError:
@@ -208,7 +207,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
             continue
         # Cache the file locally
         if use_s3:
-            object_key = os.sep.join(raw_data_folder[3:] + [run_uuid + '.csv.gz'])
+            object_key = os.sep.join(
+                raw_data_folder[3:] + [run_uuid + '.csv.gz'])
             s3.put_object(Bucket=raw_data_folder[2], Key=object_key,
                           Body=gzip.compress(resp.text.encode()))
         else:
@@ -247,7 +247,7 @@ def _get_result_for_run(run, session, use_db=True, get_tests=False,
         object_key = os.sep.join(metadata_folder[3:] + [run.uuid + '.json.gz'])
         try:
             s3.head_object(Bucket=metadata_folder[2], Key=object_key)
-            stream_or_file = lambda: s3.get_object(
+            def stream_or_file(): return s3.get_object(
                 Bucket=metadata_folder[2], Key=object_key)['Body']
         except s3.exceptions.ClientError:
             # Not found, continue
@@ -256,7 +256,7 @@ def _get_result_for_run(run, session, use_db=True, get_tests=False,
         os.makedirs(os.sep.join(metadata_folder), exist_ok=True)
         result_file = os.sep.join(metadata_folder + [run.uuid + '.json.gz'])
         if os.path.isfile(result_file):
-            stream_or_file = lambda: result_file
+            def stream_or_file(): return result_file
 
     # If cached
     if stream_or_file:
@@ -335,12 +335,14 @@ def _get_data_for_run(run, sample_interval, session=None,
     result['dstat'] = dstat
     return result
 
+
 def _get_cached_data_for_run_id(run_id, sample_interval, data_path=None,
                                 s3=None):
     Run = collections.namedtuple('Run', ['uuid', 'artifacts'])
     return _get_data_for_run(Run(uuid=run_id, artifacts=None), sample_interval,
                              session=None, use_remote=False,
                              data_path=data_path, s3=s3)
+
 
 def get_subunit_results(build_uuid, dataset_name, sample_interval, db_uri,
                         build_name='tempest-full', data_path=None, s3=None):
@@ -375,7 +377,8 @@ def get_subunit_results_for_run(run_id, sample_interval, data_path=None,
                                 s3=None):
     """Get data for run from cache only"""
     return _get_cached_data_for_run_id(run_id, sample_interval,
-                                      data_path=data_path, s3=s3)
+                                       data_path=data_path, s3=s3)
+
 
 def gather_and_cache_results_for_runs(runs, build_name, limit, sample_interval,
                                       db_uri=None, session=None, data_path=None,
@@ -451,10 +454,12 @@ def get_data_json_folder_list(dataset, sub_folder=None, data_path=None,
         dataset_folder.append(sub_folder)
     return dataset_folder
 
+
 def get_data_json_folder(dataset, sub_folder=None, data_path=None,
                          s3=None):
     return os.sep.join(get_data_json_folder_list(
         dataset, sub_folder=sub_folder, data_path=data_path, s3=s3))
+
 
 def save_data_json(dataset, data, name, sub_folder=None, data_path=None,
                    s3=None):
@@ -509,10 +514,10 @@ def load_data_json(dataset, name, ignore_error=False, sub_folder=None,
         if not s3:
             raise ValueError("data_path %s requires an s3 client" % data_path)
         object_key = os.sep.join(dataset_folder[3:])
-        stream_or_file = lambda: s3.get_object(Bucket=dataset_folder[2],
-                                               Key=object_key)['Body']
+        def stream_or_file(): return s3.get_object(Bucket=dataset_folder[2],
+                                                   Key=object_key)['Body']
     else:
-        stream_or_file = lambda: os.sep.join(dataset_folder)
+        def stream_or_file(): return os.sep.join(dataset_folder)
     # Unzip object stream or local file
     try:
         # Force text mode to ensure we get a string, not bytes
@@ -561,6 +566,18 @@ def load_experiment(name, data_path=None, s3=None):
 def save_experiment(experiment, name, data_path=None, s3=None):
     save_data_json('_experiments', experiment, 'experiment', sub_folder=name,
                    data_path=data_path, s3=s3)
+
+
+def load_splits(size, training, dev, data_path=None, s3=None):
+    return load_data_json(
+        '_splits', str(training) + "_" + str(dev), sub_folder=str(size),
+        data_path=data_path, s3=s3)
+
+
+def save_splits(splits, size, training, dev, data_path=None, s3=None):
+    save_data_json(
+        '_splits', splits, str(training) + "_" + str(dev),
+        sub_folder=str(size), data_path=data_path, s3=s3)
 
 
 def get_model_folder(dataset, name, data_path=None):
@@ -717,9 +734,9 @@ def cache_data_function(build_name, db_uri, limit=0, data_path=None,
                         s3_secret_access_key=None):
     runs = get_runs_by_name(db_uri, build_name=build_name)
     print("Obtained %d runs named %s from the DB" % (len(runs), build_name))
-    s3=get_s3_client(s3_url=s3_url, s3_profile=s3_profile,
-                     s3_access_key_id=s3_access_key_id,
-                     s3_secret_access_key=s3_secret_access_key)
+    s3 = get_s3_client(s3_url=s3_url, s3_profile=s3_profile,
+                       s3_access_key_id=s3_access_key_id,
+                       s3_secret_access_key=s3_secret_access_key)
     limit_runs = gather_and_cache_results_for_runs(
         runs, build_name, limit, '1s', db_uri, data_path=data_path, s3=s3)
     return {
