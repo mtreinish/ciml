@@ -130,6 +130,8 @@ def _get_data_handlers(raw_data_folder, run_uuid, use_s3=False, s3=None):
             def stream_or_file(): return raw_data_file
             def data_cleaner(): return os.remove(raw_data_file)
             return stream_or_file, data_cleaner
+        else:
+            return None, None
     else:
         object_key = os.sep.join(raw_data_folder[3:] + [run_uuid + '.csv.gz'])
         try:
@@ -182,6 +184,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                         # consumed data already - regenerate stream_or_file
                         continue
                     except pd.errors.ParserError:
+                        raw_data_file = os.sep.join(
+                            raw_data_folder + [run_uuid + '.csv.gz'])
                         print('Corrupted data in %s, deleting.' % raw_data_file,
                               file=sys.stderr)
                         os.remove(raw_data_file)
@@ -212,6 +216,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
             s3.put_object(Bucket=raw_data_folder[2], Key=object_key,
                           Body=gzip.compress(resp.text.encode()))
         else:
+            raw_data_file = os.sep.join(
+                raw_data_folder + [run_uuid + '.csv.gz'])
             with gzip.open(raw_data_file, mode='wb') as local_cache:
                 local_cache.write(resp.text.encode())
         print("%s: dstat cached from URL" % run_uuid)
