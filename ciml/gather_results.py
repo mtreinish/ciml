@@ -183,7 +183,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                         # Something went wrong with parsing but me may have
                         # consumed data already - regenerate stream_or_file
                         continue
-                    except pd.errors.ParserError:
+                    except (pd.errors.ParserError, pd.errors.EmptyDataError):
                         raw_data_file = os.sep.join(
                             raw_data_folder + [run_uuid + '.csv.gz'])
                         print('Corrupted data in %s, deleting.' % raw_data_file,
@@ -199,6 +199,7 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
     # If no cache and use_http is False, nothing more we can do
     if not use_http:
         print("No local cache found for %s, and use_http false" % run_uuid)
+        return None
 
     # If no local cache was found we try to fetch the dstats file via HTTP
     # and we store it in cache.
@@ -228,10 +229,10 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
             try:
                 return _parse_dstat_file(f, sample_interval, skiprows)
             except KeyError:
-                # Something went wrong with parasing but me may have
+                # Something went wrong with parsing but me may have
                 # consumed data already - regenerate stream_or_file
                 continue
-            except pd.errors.ParserError:
+            except (pd.errors.ParserError, pd.errors.EmptyDataError):
                 print('Failed parsing dstat data in %s' % artifact_link,
                       file=sys.stderr)
                 return None
