@@ -16,7 +16,7 @@ experimentation and tuning of data preparation as well as model parameters and
 hyper-parameters:
 
 * Cache raw data (dstat CSV files) and run metadata from OpenStack log server
-  and `test result database<https://docs.openstack.org/infra/system-config/logstash.html#subunit2sql>`_. After this step, everything else may be done
+  and `test result database`_. After this step, everything else may be done
   offline, as only cached data will be used
 * Build a normalized dataset, split into training, dev and test. This step
   allows to define the number of samples, the level of downsampling (in any)
@@ -26,6 +26,7 @@ hyper-parameters:
   Each dataset can have multiple experiments
 * Train a model i.e. run an experiment against a dataset
 
+.. _`test result database`: https://docs.openstack.org/infra/system-config/logstash.html#subunit2sql
 
 To cache raw data locally, use `ciml-cache-data`:
 
@@ -35,13 +36,16 @@ To cache raw data locally, use `ciml-cache-data`:
 
 Example:
 
-.. code::shell
+.. code:: shell
+
   ciml-cache-data --build-name tempest-full --db-uri mysql+pymysql://query:query@logstash.openstack.org/subunit2sql
 
-This connects to the OpenStack `subunit2sql<https://docs.openstack.org/subunit2sql/latest/reference/index.html>`_ database, fetch all runs that
+This connects to the OpenStack subunit2sql_ database, fetch all runs that
 match the specified build_name and try to download the dstat data from
 logs.openstack.org. The dstat file and build results are stored gzipped
 under data/.raw and data/.metadata.
+
+.. _subunit2sql: https://docs.openstack.org/subunit2sql/latest/reference/index.html
 
 Running ciml-cache-data with the same build name again extends the cache.
 Data for different build names can be cached, dedicated JSON files keep track
