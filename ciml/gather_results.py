@@ -207,7 +207,11 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
         if not artifact_link:
             break
         url = artifact_link + '/' + path
-        resp = requests.get(url)
+        try:
+            resp = requests.get(url, timeout=(3.05,15))
+        except requests.exceptions.ConnectionError:
+            print("Connection time out on {}".format(url))
+            continue
         if resp.status_code == 404:
             continue
         # Cache the file locally
