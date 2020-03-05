@@ -31,6 +31,7 @@ import six
 import sys
 import tempfile
 import warnings
+import zlib
 warnings.filterwarnings("ignore")
 
 
@@ -183,7 +184,8 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                         # Something went wrong with parsing but me may have
                         # consumed data already - regenerate stream_or_file
                         continue
-                    except (pd.errors.ParserError, pd.errors.EmptyDataError):
+                    except (pd.errors.ParserError, pd.errors.EmptyDataError,
+                            zlib.error):
                         raw_data_file = os.sep.join(
                             raw_data_folder + [run_uuid + '.csv.gz'])
                         print('Corrupted data in %s, deleting.' % raw_data_file,
@@ -211,6 +213,9 @@ def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
             resp = requests.get(url, timeout=(3.05,15))
         except requests.exceptions.ConnectionError:
             print("Connection time out on {}".format(url))
+            continue
+        except requests.exceptions.ReadTimeout:
+            print("Read time out on {}".format(url))
             continue
         if resp.status_code == 404:
             continue
