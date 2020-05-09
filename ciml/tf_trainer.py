@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-tf.logging.set_verbosity(tf.logging.INFO)
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 
 
 def get_feature_columns(labels):
