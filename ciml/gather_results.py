@@ -44,7 +44,6 @@ now = datetime.datetime.utcnow()
 def get_s3_client(s3_profile=None, s3_url=None, s3_access_key_id=None,
                   s3_secret_access_key=None):
     """Get an s3 client by different means
-
     If a profile name is specified, it's used. Else we look for access_key
     ID and secret. If a URL is passed it's used, else the default AWS is used.
     """
@@ -103,10 +102,8 @@ def _parse_dstat_date(date_str):
 
 def _parse_dstat_file(input_io, sample_interval=None, skiprows=6):
     """Parse a single dstat file into a DatetimeIndex.
-
     Parse a dstat file into a DatetimeIndex.
     Optionally resample to the specified sample_interval.
-
     A dstat file is a "rolled" example with size s x d, where:
     - s is the number of samples (over time) after resampling
     - d is the number of dstat columns available
@@ -150,7 +147,6 @@ def _get_data_handlers(raw_data_folder, run_uuid, use_s3=False, s3=None):
 def _get_dstat_file(artifact_link, run_uuid=None, sample_interval=None,
                     use_http=True, data_path=None, s3=None):
     """Obtains and parses a dstat file to a pd.DatetimeIndex
-
     Finds a dstat file in the local cache or downloads it from the
     artifacts link, then parses it and resamples it into a
     pd.DatetimeIndex.
@@ -564,7 +560,6 @@ def save_model_config(dataset, model_config, data_path=None, s3=None):
 
 def load_run_uuids(dataset, name='runs', data_path=None, s3=None):
     """Return a list of run uuids for a specific dataset_name
-
     Read the list of run uuids from file and return a list of run uuids.
     """
     return load_data_json(dataset, name, data_path=data_path, s3=s3)

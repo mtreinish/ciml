@@ -32,7 +32,7 @@ import tensorflow as tf
 
 from ciml import trainer
 
-tf.logging.set_verbosity(tf.logging.INFO)
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 
 
 def build_success_time_series(result):
