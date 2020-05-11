@@ -62,11 +62,19 @@ To create a normalized dataset, use `ciml-build-dataset`:
 .. code:: shell
 
   ciml-build-dataset --dataset <dataset-name> --build-name <build-name>
+  
+Example:
 
+.. code:: shell
+
+  ciml-build-dataset --dataset tempest-full --build-name tempest-full --features-regex '(usr|used|1m)'
+
+  
 This selects the required number of runs from the local cache, it loads the
 data into memory, it runs the normalization step and it saves the three
 resulting datasets (traning, dev and test) into numpy compressed archives
-(.npz) files. It also creates one compressed archive for the feature labels.
+(.npz) files. 
+It also creates one compressed archive for the feature labels, selected by the user with --feature-regex. All features available in the dstat log can be found at  https://linux.die.net/man/1/dstat 
 
 There are several extra options that can be used to control size and
 normalization of the resulting dataset. For more help run:
