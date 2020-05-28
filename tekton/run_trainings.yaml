@@ -1,4 +1,4 @@
-apiVersion: tekton.dev/v1alpha1
+apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: ciml-run-all-trainings
@@ -7,29 +7,28 @@ spec:
     - name: ciml-data
       configMap:
         name: ciml-data
-  inputs:
-    params:
-    - name: git-resource
-      description: Name of the git resource to be used to the training tasks
-    - name: experiments-bucket-resource
-      description: Name of the bucket resources with experiments
-    - name: max-concurrency
-      description: Max concurrency for training tasks execution
-    - name: data-bucket
-      description: Name of the bucket that holds the datasets and experiments
-    - name: output-bucket
-      description: Name of the bucket where to write trained models to
-    resources:
-    - name: ciml
-      type: git
-  outputs:
-    resources:
-    - name: runlog
-      type: storage
+  params:
+  - name: git-resource
+    description: Name of the git resource to be used to the training tasks
+  - name: experiments-bucket-resource
+    description: Name of the bucket resources with experiments
+  - name: max-concurrency
+    description: Max concurrency for training tasks execution
+  - name: data-bucket
+    description: Name of the bucket that holds the datasets and experiments
+  - name: output-bucket
+    description: Name of the bucket where to write trained models to
+  resources:
+    inputs:
+      - name: ciml
+        type: git
+    outputs:
+      - name: runlog
+        type: storage
   steps:
   - name: run-ciml-matrix
-    image: us.icr.io/ciml/tkn:v0.4
-    workingDir: $(inputs.resources.ciml.path)/scripts
+    image: de.icr.io/ciml/tkn:latest
+    workingDir: $(resources.inputs.ciml.path)/scripts
     env:
     - name: GIT_RESOURCE
       value: $(inputs.params.git-resource)
@@ -51,8 +50,7 @@ spec:
     - name: ciml-data
       mountPath: /data
     command:
-    - /bin/bash
-    args:
-    - -ce
-    - |
+    script: |
+      #!/bin/bash
+      set -ex
       ./run_with_tekton.sh

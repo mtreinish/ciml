@@ -1,31 +1,31 @@
-apiVersion: tekton.dev/v1alpha1
+apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: ciml-run-training
 spec:
-  inputs:
-    params:
-    - name: dataset
-      description: Name of the dataset
-    - name: experiment
-      description: Name of the experiment
-    resources:
-    - name: ciml
-      type: git
-    - name: dataset
-      type: storage
-      targetPath: data/dataset
-    - name: experiments
-      type: storage
-      targetPath: data/_experiments
-  outputs:
-    resources:
-    - name: cimloutput
-      type: storage
+  params:
+  - name: dataset
+    description: Name of the dataset
+  - name: experiment
+    description: Name of the experiment
+  resources:
+    inputs:
+      - name: ciml
+        type: git
+      - name: dataset
+        type: storage
+        targetPath: data/dataset
+      - name: experiments
+        type: storage
+        targetPath: data/_experiments
+    outputs:
+      resources:
+      - name: cimloutput
+        type: storage
   steps:
 
   - name: run-ciml
-    image: us.icr.io/ciml/ciml-base:manual2
+    image: de.icr.io/ciml/ciml-base:latest
     workingDir: $(inputs.resources.ciml.path)
     env:
     - name: PYTHONPATH
@@ -34,17 +34,16 @@ spec:
       value: C.UTF-8
     - name: LANG
       value: C.UTF-8
-    command:
-    - /bin/bash
-    args:
-    - -ce
-    - |
-      DATA_DIR=$(dirname $(inputs.resources.dataset.path))
-      ln -s $(inputs.resources.dataset.path) $DATA_DIR/$(inputs.params.dataset)
+    script: |
+      #!/bin/bash
+      set -ex
+
+      DATA_DIR=$(dirname $(resources.inputs.dataset.path))
+      ln -s $(resources.inputs.dataset.path) $DATA_DIR/$(params.dataset)
 
       python ciml/trainer.py local_trainer \
-        --dataset "$(inputs.params.dataset)" \
-        --experiment "$(inputs.params.experiment)" \
+        --dataset "$(params.dataset)" \
+        --experiment "$(params.experiment)" \
         --data-path $DATA_DIR
 
-      mv $(inputs.resources.ciml.path)/data $(outputs.resources.cimloutput.path)/
+      mv $(resources.inputs.ciml.path)/data $(resources.outputs.cimloutput.path)/
