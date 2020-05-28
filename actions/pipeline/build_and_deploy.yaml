@@ -1,58 +1,26 @@
-apiVersion: tekton.dev/v1alpha1
-kind: Condition
-metadata:
-  name: image-source-changed
-spec:
-  params:
-    - name: path
-      description: The path to the image folder
-      type: string
-  resources:
-    - name: workspace
-      type: git
-    - name: workspace-old
-      type: git
-  check:
-    image: alpine/git
-    command:
-    - /bin/sh
-    args:
-    - -ce
-    - |
-      cd $(resources.workspace.path)
-      HEAD=`git rev-parse @:$(params.path)`
-      echo "HEAD@$PWD: $HEAD"
-      git log -1
-      cd $(resources.workspace-old.path)
-      HEADOLD=`git rev-parse @:$(params.path)`
-      echo "HEAD@$PWD: $HEADOLD"
-      git log -1
-      test $HEAD != $HEADOLD
----
-apiVersion: tekton.dev/v1alpha1
+apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: source-to-image
   labels:
     app: ciml
 spec:
-  inputs:
-    resources:
+  params:
+    - name: pathToDockerFile
+      description: The path to the dockerfile to build (relative to the context)
+      default: Dockerfile
+    - name: pathToContext
+      description:
+        The path to the build context, used by Kaniko - within the workspace
+      default: .
+    - name: imageTag
+      description: Tag of the images to be used.
+      default: "default"
+  resources:
+    inputs:
       - name: workspace
         type: git
-    params:
-      - name: pathToDockerFile
-        description: The path to the dockerfile to build (relative to the context)
-        default: Dockerfile
-      - name: pathToContext
-        description:
-          The path to the build context, used by Kaniko - within the workspace
-        default: .
-      - name: imageTag
-        description: Tag of the images to be used.
-        default: "default"
-  outputs:
-    resources:
+    outputs:
       - name: builtImage
         type: image
   steps:
@@ -61,39 +29,38 @@ spec:
       command:
         - /kaniko/executor
       args:
-        - --dockerfile=$(inputs.params.pathToDockerFile)
-        - --destination=$(outputs.resources.builtImage.url):$(inputs.params.imageTag)
-        - --context=$(inputs.resources.workspace.path)/$(inputs.params.pathToContext)
+        - --dockerfile=$(params.pathToDockerFile)
+        - --destination=$(resources.outputs.builtImage.url):$(params.imageTag)
+        - --context=$(resources.inputs.workspace.path)/$(params.pathToContext)
 ---
-apiVersion: tekton.dev/v1alpha1
+apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: deploy-actions
   labels:
     app: ciml
 spec:
-  inputs:
-    resources:
+  resources:
+    inputs:
       - name: workspace
         type: git
   steps:
     - name: run-deploy
       image: andreaf76/wskdeploy:latest
-      command:
-        - /bin/bash
-      args:
-        - -ce
-        - |
-          $(inputs.resources.workspace.path)/actions/deploy.sh --install
+      script: |
+        #!/bin/bash
+        set -ex
+
+        $(resources.inputs.workspace.path)/actions/deploy.sh --install
       volumeMounts:
       - name: wskconfig
         mountPath: "/root/"
         readOnly: true
       env:
         - name: CIML_DATA_PATH
-          value: s3://cimlrawdata
+          value: s3://cimlrawdata-1
         - name: S3_URL
-          value: https://s3.eu-geo.objectstorage.softlayer.net
+          value: https://s3.eu-de.cloud-object-storage.appdomain.cloud
         - name: S3_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
@@ -109,7 +76,7 @@ spec:
       secret:
         secretName: cimlwiskconfig
 ---
-apiVersion: tekton.dev/v1alpha1
+apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
   name: ciml-action-build-and-deploy
@@ -121,22 +88,12 @@ spec:
   resources:
     - name: src
       type: git
-    - name: src-old
-      type: git
     - name: builtImage
       type: image
   tasks:
   - name: source-to-image-task
     taskRef:
       name: source-to-image
-    conditions:
-      - conditionRef: image-source-changed
-        params:
-          - name: path
-            value: actions/base-image-no-tf
-        resources:
-          - name: workspace
-            resource: src
     params:
       - name: pathToContext
         value: actions/base-image-no-tf
@@ -146,8 +103,6 @@ spec:
       inputs:
         - name: workspace
           resource: src
-        - name: workspace-old
-          resource: src-old
       outputs:
         - name: builtImage
           resource: builtImage

@@ -9,7 +9,6 @@
 
 # Optional (with defaults)
 GIT_REFERENCE=${GIT_REFERENCE:-$(git rev-parse HEAD)}
-GIT_REFERENCE_OLD=${GIT_REFERENCE_OLD:-$(git rev-parse $GIT_REFERENCE~1)}
 GIT_URL=${GIT_URL:-https://github.com/mtreinish/ciml}
 IMAGES_BASE_URL=${IMAGES_BASE_URL:-index.docker.io/andreaf76}
 IMAGE_TAG=${IMAGE_TAG:-$(git rev-parse --short HEAD)}
@@ -78,23 +77,6 @@ spec:
       value: $GIT_URL
 EOF
 )
-GIT_RESOURCE_OLD=$(cat <<EOF | kubectl create -n $TARGET_NAMESPACE -o jsonpath='{.metadata.name}' -f -
-apiVersion: tekton.dev/v1alpha1
-kind: PipelineResource
-metadata:
-  generateName: ciml-git-
-  labels:
-    app: ciml
-    tag: "$IMAGE_TAG"
-spec:
-  type: git
-  params:
-    - name: revision
-      value: $GIT_REFERENCE_OLD
-    - name: url
-      value: $GIT_URL
-EOF
-)
 
 # Image
 IMAGE_RESOURCE=$(cat <<EOF | kubectl create -n $TARGET_NAMESPACE -o jsonpath='{.metadata.name}' -f -
@@ -113,53 +95,18 @@ spec:
 EOF
 )
 
+## Setup and run the pipeline or task
 if [[ "$TASK_OR_PIPELINE" == "pipeline" ]]; then
-  ## Setup and run the pipeline
-  cat <<EOF | kubectl create -n $TARGET_NAMESPACE -f -
-  apiVersion: tekton.dev/v1alpha1
-  kind: PipelineRun
-  metadata:
-    generateName: ciml-action-build-and-deploy-run-
-    labels:
-      app: ciml
-      tag: "$IMAGE_TAG"
-  spec:
-    pipelineRef:
-      name: ciml-action-build-and-deploy
-    params:
-      - name: imageTag
-        value: $IMAGE_TAG
-    serviceAccount: "$SERVICE_ACCOUNT"
-    resources:
-      - name: src
-        resourceRef:
-          name: $GIT_RESOURCE
-      - name: src-old
-        resourceRef:
-          name: $GIT_RESOURCE_OLD
-      - name: builtImage
-        resourceRef:
-          name: $IMAGE_RESOURCE
-EOF
+  tkn pipeline start -n $TARGET_NAMESPACE \
+    -p imageTag=latest \
+    -r src=$GIT_RESOURCE \
+    -r builtImage=$IMAGE_RESOURCE \
+    ciml-action-build-and-deployelse
+    BUILD_IMAGE="yes"
 else
-  cat <<EOF | kubectl create -n $TARGET_NAMESPACE -f -
-  apiVersion: tekton.dev/v1alpha1
-  kind: TaskRun
-  metadata:
-    generateName: ciml-action-deploy-run-
-    labels:
-      app: ciml
-      tag: "$IMAGE_TAG"
-  spec:
-    serviceAccount: "$SERVICE_ACCOUNT"
-    taskRef:
-      name: deploy-actions
-    inputs:
-      resources:
-        - name: workspace
-          resourceRef:
-            name: $GIT_RESOURCE
-EOF
+  tkn task start -n $TARGET_NAMESPACE \
+    -i workspace=$GIT_RESOURCE \
+    deploy-actions
 fi
 
 # Watch command
