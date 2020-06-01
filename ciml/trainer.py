@@ -40,7 +40,8 @@ except ImportError:
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 
 try:
-    import tensorflow as tf
+    import tensorflow.compat.v1 as tf
+    tf.disable_eager_execution()
     from tensorflow.python.training import adagrad
     from tensorflow.python.training import adam
     from tensorflow.python.training import ftrl
