@@ -14,7 +14,8 @@
 
 import os
 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_eager_execution()
 
 BATCH_SIZE = 1000
 

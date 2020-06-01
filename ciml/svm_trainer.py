@@ -16,9 +16,9 @@ import os
 
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
+import tensorflow.compat.v1 as tf
+tf.disable_eager_execution()
+tf.logging.set_verbosity(tf.logging.INFO)
 
 
 class SVMTrainer(object):
